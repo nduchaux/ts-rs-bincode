@@ -7,6 +7,7 @@ use syn::{
 use crate::{
     attr::{Attr, ContainerAttr, FieldAttr, Inflection, Optional, StructAttr},
     deps::Dependencies,
+    schem::Schema,
     utils::{raw_name_to_ts_field, to_ts_ident},
     DerivedTS,
 };
@@ -17,6 +18,7 @@ pub(crate) fn named(attr: &StructAttr, name: &str, fields: &FieldsNamed) -> Resu
     let mut formatted_fields = Vec::new();
     let mut flattened_fields = Vec::new();
     let mut dependencies = Dependencies::new(crate_rename.clone());
+    let mut schema = Schema::new(name.to_string(), crate::schem::SchemaType::Struct);
 
     if let Some(tag) = &attr.tag {
         let formatted = format!("\"{}\": \"{}\",", tag, name);
@@ -31,6 +33,7 @@ pub(crate) fn named(attr: &StructAttr, name: &str, fields: &FieldsNamed) -> Resu
             &mut formatted_fields,
             &mut flattened_fields,
             &mut dependencies,
+            &mut schema,
             field,
             &attr.rename_all,
         )?;
@@ -73,6 +76,7 @@ pub(crate) fn named(attr: &StructAttr, name: &str, fields: &FieldsNamed) -> Resu
         ts_name: name.to_owned(),
         concrete: attr.concrete.clone(),
         bound: attr.bound.clone(),
+        schema: Some(schema),
     })
 }
 
@@ -91,6 +95,7 @@ fn format_field(
     formatted_fields: &mut Vec<TokenStream>,
     flattened_fields: &mut Vec<TokenStream>,
     dependencies: &mut Dependencies,
+    schema: &mut Schema,
     field: &Field,
     rename_all: &Option<Inflection>,
 ) -> Result<()> {
@@ -126,6 +131,7 @@ fn format_field(
         return Ok(());
     }
 
+    let mut include_in_def = false;
     let formatted_ty = field_attr
         .type_override
         .map(|t| quote!(#t))
@@ -135,6 +141,7 @@ fn format_field(
                 quote!(<#ty as #crate_rename::TS>::inline())
             } else {
                 dependencies.push(ty);
+                include_in_def = true;
                 quote!(<#ty as #crate_rename::TS>::name())
             }
         });
@@ -152,6 +159,8 @@ fn format_field(
         true => "".to_string(),
         false => format!("\n{}", &field_attr.docs),
     };
+
+    schema.add_field(valid_name.clone(), &parsed_ty, include_in_def);
 
     formatted_fields.push(quote! {
         format!("{}{}{}: {},", #docs, #valid_name, #optional_annotation, #formatted_ty)

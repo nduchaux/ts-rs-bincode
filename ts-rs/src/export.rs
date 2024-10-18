@@ -264,6 +264,7 @@ pub(crate) fn export_to_string<T: TS + ?Sized + 'static>() -> Result<String, Exp
     buffer.push_str(NOTE);
     generate_imports::<T::WithoutGenerics>(&mut buffer, default_out_dir())?;
     generate_decl::<T>(&mut buffer);
+    generate_schema::<T>(&mut buffer);
     buffer.push('\n');
     Ok(buffer)
 }
@@ -286,6 +287,15 @@ fn generate_decl<T: TS + ?Sized>(out: &mut String) {
     // Type Definition
     out.push_str("export ");
     out.push_str(&T::decl());
+}
+
+/// Push the schema of `T`
+fn generate_schema<T: TS + ?Sized>(out: &mut String) {
+    let schema = T::schema(true);
+    if !schema.is_empty() {
+        out.push_str("\n\nexport ");
+        out.push_str(&schema);
+    }
 }
 
 /// Push an import statement for all dependencies of `T`.

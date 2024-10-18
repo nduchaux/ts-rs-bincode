@@ -21,6 +21,7 @@ pub(crate) fn type_as_struct(attr: &StructAttr, name: &str, type_as: &Type) -> R
         ts_name: name.to_owned(),
         concrete: attr.concrete.clone(),
         bound: attr.bound.clone(),
+        schema: None,
     })
 }
 
@@ -38,5 +39,6 @@ pub(crate) fn type_as_enum(attr: &EnumAttr, name: &str, type_as: &Type) -> Resul
         ts_name: name.to_owned(),
         concrete: attr.concrete.clone(),
         bound: attr.bound.clone(),
+        schema: None,
     })
 }

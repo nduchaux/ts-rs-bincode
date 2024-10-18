@@ -46,5 +46,6 @@ pub(crate) fn newtype(attr: &StructAttr, name: &str, fields: &FieldsUnnamed) -> 
         ts_name: name.to_owned(),
         concrete: attr.concrete.clone(),
         bound: attr.bound.clone(),
+        schema: None,
     })
 }

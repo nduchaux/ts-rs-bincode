@@ -424,6 +424,10 @@ pub trait TS {
     /// This function will panic if the type cannot be flattened.
     fn inline_flattened() -> String;
 
+    /// Schema of this type in TypeScript, e.g `{ user_id: i32 }`.
+    /// This function will not panic if the type has no schema.
+    fn schema(export: bool) -> String;
+
     /// Iterates over all dependency of this type.
     fn visit_dependencies(_: &mut impl TypeVisitor)
     where
@@ -621,6 +625,7 @@ macro_rules! impl_primitives {
             fn name() -> String { $l.to_owned() }
             fn inline() -> String { <Self as $crate::TS>::name() }
             fn inline_flattened() -> String { panic!("{} cannot be flattened", <Self as $crate::TS>::name()) }
+            fn schema(_: bool) -> String { format!("{{ \"type\" : \"{}\" }}", <Self as $crate::TS>::name()) }
             fn decl() -> String { panic!("{} cannot be declared", <Self as $crate::TS>::name()) }
             fn decl_concrete() -> String { panic!("{} cannot be declared", <Self as $crate::TS>::name()) }
         }
@@ -636,6 +641,12 @@ macro_rules! impl_tuples {
             }
             fn inline() -> String {
                 panic!("tuple cannot be inlined!");
+            }
+            fn schema(export: bool) -> String {
+                format!(
+                    "{{ \"type\" : \"tuple\", \"items\" : [{}] }}",
+                    [$(<$i as $crate::TS>::schema(export)),*].join(", ")
+                )
             }
             fn visit_generics(v: &mut impl TypeVisitor)
             where
@@ -666,6 +677,7 @@ macro_rules! impl_wrapper {
             fn name() -> String { T::name() }
             fn inline() -> String { T::inline() }
             fn inline_flattened() -> String { T::inline_flattened() }
+            fn schema(export: bool) -> String { T::schema(export) }
             fn visit_dependencies(v: &mut impl TypeVisitor)
             where
                 Self: 'static,
@@ -695,6 +707,7 @@ macro_rules! impl_shadow {
             fn name() -> String { <$s as $crate::TS>::name() }
             fn inline() -> String { <$s as $crate::TS>::inline() }
             fn inline_flattened() -> String { <$s as $crate::TS>::inline_flattened() }
+            fn schema(export: bool) -> String { <$s as $crate::TS>::schema(export) }
             fn visit_dependencies(v: &mut impl $crate::TypeVisitor)
             where
                 Self: 'static,
@@ -723,6 +736,13 @@ impl<T: TS> TS for Option<T> {
 
     fn inline() -> String {
         format!("{} | null", T::inline())
+    }
+
+    fn schema(export: bool) -> String {
+        format!(
+            "{{ \"type\" : \"option\", \"items\" : {} }}",
+            T::schema(export)
+        )
     }
 
     fn visit_dependencies(v: &mut impl TypeVisitor)
@@ -762,6 +782,14 @@ impl<T: TS, E: TS> TS for Result<T, E> {
 
     fn inline() -> String {
         format!("{{ Ok : {} }} | {{ Err : {} }}", T::inline(), E::inline())
+    }
+
+    fn schema(export: bool) -> String {
+        format!(
+            "{{ \"type\" : \"result\", \"ok\" : {}, \"err\" : {} }}",
+            T::schema(export),
+            E::schema(export)
+        )
     }
 
     fn visit_dependencies(v: &mut impl TypeVisitor)
@@ -808,6 +836,13 @@ impl<T: TS> TS for Vec<T> {
 
     fn inline() -> String {
         format!("Array<{}>", T::inline())
+    }
+
+    fn schema(export: bool) -> String {
+        format!(
+            "{{ \"type\" : \"array\", \"items\" : {} }}",
+            T::schema(export)
+        )
     }
 
     fn visit_dependencies(v: &mut impl TypeVisitor)
@@ -864,6 +899,20 @@ impl<T: TS, const N: usize> TS for [T; N] {
         )
     }
 
+    fn schema(export: bool) -> String {
+        if N > ARRAY_TUPLE_LIMIT {
+            return Vec::<T>::schema(export);
+        }
+
+        format!(
+            "{{ \"type\" : \"array\", \"items\" : [{}] }}",
+            (0..N)
+                .map(|_| T::schema(export))
+                .collect::<Box<[_]>>()
+                .join(", ")
+        )
+    }
+
     fn visit_dependencies(v: &mut impl TypeVisitor)
     where
         Self: 'static,
@@ -905,6 +954,13 @@ impl<K: TS, V: TS, H> TS for HashMap<K, V, H> {
 
     fn inline() -> String {
         format!("{{ [key in {}]?: {} }}", K::inline(), V::inline())
+    }
+
+    fn schema(export: bool) -> String {
+        format!(
+            "{{ \"type\" : \"object\", \"additionalProperties\" : {} }}",
+            V::schema(export)
+        )
     }
 
     fn visit_dependencies(v: &mut impl TypeVisitor)
@@ -973,6 +1029,14 @@ impl<I: TS> TS for Range<I> {
 
     fn inline_flattened() -> String {
         panic!("{} cannot be flattened", Self::name())
+    }
+
+    fn schema(export: bool) -> String {
+        format!(
+            "{{ \"type\" : \"range\", \"start\" : {}, \"end\" : {} }}",
+            I::schema(export),
+            I::schema(export)
+        )
     }
 }
 
@@ -1090,5 +1154,9 @@ impl TS for Dummy {
 
     fn inline_flattened() -> String {
         panic!("{} cannot be flattened", Self::name())
+    }
+
+    fn schema(_: bool) -> String {
+        panic!("{} cannot be schematized", Self::name())
     }
 }

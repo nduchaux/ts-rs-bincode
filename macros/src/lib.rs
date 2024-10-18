@@ -1,10 +1,11 @@
 #![macro_use]
-#![deny(unused)]
+// #![deny(unused)]
 
 use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
+use schem::Schema;
 use syn::{
     parse_quote, spanned::Spanned, ConstParam, GenericParam, Generics, Item, LifetimeParam, Path,
     Result, Type, TypeArray, TypeParam, TypeParen, TypePath, TypeReference, TypeSlice, TypeTuple,
@@ -17,6 +18,7 @@ use crate::{deps::Dependencies, utils::format_generics};
 mod utils;
 mod attr;
 mod deps;
+mod schem;
 mod types;
 
 struct DerivedTS {
@@ -28,6 +30,7 @@ struct DerivedTS {
     dependencies: Dependencies,
     concrete: HashMap<Ident, Type>,
     bound: Option<Vec<WherePredicate>>,
+    schema: Option<schem::Schema>,
 
     export: bool,
     export_to: Option<String>,
@@ -76,8 +79,9 @@ impl DerivedTS {
         let decl = self.generate_decl_fn(&rust_ty, &generics);
         let dependencies = &self.dependencies;
         let generics_fn = self.generate_generics_fn(&generics);
+        let schem = self.generate_schem_fn(&rust_ty, &generics, &self.dependencies);
 
-        quote! {
+        let final_q = quote! {
             #impl_start {
                 #assoc_type
 
@@ -89,6 +93,7 @@ impl DerivedTS {
                 #name
                 #decl
                 #inline
+                #schem
                 #generics_fn
                 #output_path_fn
 
@@ -101,7 +106,14 @@ impl DerivedTS {
             }
 
             #export
-        }
+        };
+        // write impl to file for debugging
+        use std::fs::File;
+        use std::io::Write;
+        let folder = std::fs::create_dir_all("example/bindings/rs").unwrap();
+        let mut file = File::create(format!("{}/{}.rs", "example/bindings/rs", rust_ty)).unwrap();
+        write!(file, "{}", final_q).unwrap();
+        final_q
     }
 
     /// Returns an expression which evaluates to the TypeScript name of the type, including generic
@@ -161,6 +173,7 @@ impl DerivedTS {
                     fn inline_flattened() -> String { stringify!(#generics).to_owned() }
                     fn decl() -> String { panic!("{} cannot be declared", #name) }
                     fn decl_concrete() -> String { panic!("{} cannot be declared", #name) }
+                    fn schema(export: bool) -> String { panic!("{} cannot have a schema", #name) }
                 }
             )*
         }
@@ -208,6 +221,107 @@ impl DerivedTS {
                 #(#generics)*
             }
         }
+    }
+
+    // export const UserSchema = {
+    //     "type": "struct",
+    //     "properties": {
+    //         "user_id": { "type": "i32" },
+    //         "first_name": { "type": "string" },
+    //         "last_name": { "type": "string" },
+    //         "role": { "$ref": "#/definitions/Role" },
+    //         "family": { "type": "array", "items": { "$ref": "#/definitions/User" }
+    //         },
+    //     },
+    // };
+    fn generate_schem_fn(
+        &self,
+        rust_ty: &Ident,
+        _generics: &Generics,
+        dependencies: &Dependencies,
+    ) -> TokenStream {
+        let crate_rename = &self.crate_rename;
+        let _o_name = self.ts_name.clone();
+        let name = &self.ts_name;
+        let name = format!("{}Schema", name);
+        if let Some(schema) = &self.schema {
+            // get only values of the map (def)
+            let def_type_list: Vec<String> = schema
+                .def
+                .iter()
+                .map(|(_, v)| {
+                    let v = v.to_string();
+                    v
+                })
+                .collect();
+            let schema = schema.to_string();
+            // let dependencies = dependencies.used_types();
+            // let dependencies = dependencies.used_types().map(|ty| {
+            //     quote! {
+            //         v.visit::<#ty>();
+            //         <#ty as #crate_rename::TS>::schema();
+            //     }
+            // });
+            let dependencies = def_type_list.into_iter().map(|ty| {
+                // _ty needs to be in lowercase
+                if ty.is_empty() {
+                    panic!("ty is empty")
+                }
+                let __ty: TokenStream = ty.parse().unwrap();
+                let _ty: TokenStream = ty.to_lowercase().parse().unwrap();
+                (_ty, __ty)
+            });
+            let def_dependencies = dependencies.clone().map(|(ty, _ty)| {
+                if _ty.to_token_stream().to_string() == _o_name {
+                    quote! {}
+                } else {
+                    quote! {
+                        let #ty: String = <#_ty as #crate_rename::TS>::schema(false);
+                    }
+                }
+            });
+            let repl_dependencies = dependencies.map(|(ty, _ty)| {
+                if _ty.to_token_stream().to_string() == _o_name {
+                    let fmt_def: String =
+                        format!("#/definitions/{}", _ty.to_token_stream().to_string());
+                    let fmt: String =
+                        format!("&&&{}&&&", ty.to_token_stream().to_string().to_uppercase());
+                    quote! {
+                        let schem = schem.replace(#fmt_def, "#");
+                        let schem = schem.replace(#fmt, "{}");
+                    }
+                } else {
+                    let fmt: String =
+                        format!("&&&{}&&&", ty.to_token_stream().to_string().to_uppercase());
+                    quote! {
+                        let schem = schem.replace(#fmt, &#ty);
+                    }
+                }
+            });
+            return quote! {
+                fn schema(export: bool) -> String {
+                    #(#def_dependencies)*
+                    let mut schem = "".to_string();
+                    if (export) {
+                        schem = format!("const {} = {}", #name, #schema);
+                    } else {
+                        schem = format!("{}", #schema);
+                    }
+                    #(#repl_dependencies)*
+                    schem
+                }
+            };
+        } else {
+            return quote! {
+                fn schema(export: bool) -> String {
+                    if (export) {
+                        format!("const {} = {}", #name, "{}")
+                    } else {
+                        format!("{}", "{}")
+                    }
+                }
+            };
+        };
     }
 
     fn generate_name_fn(&self, generics: &Generics) -> TokenStream {

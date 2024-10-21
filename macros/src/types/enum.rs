@@ -1,10 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Fields, ItemEnum, Variant};
+use syn::{parse2, Fields, Generics, ItemEnum, Type, Variant};
 
 use crate::{
     attr::{Attr, EnumAttr, FieldAttr, StructAttr, Tagged, VariantAttr},
     deps::Dependencies,
+    schem::Schema,
     types::{self, type_as, type_override},
     DerivedTS,
 };
@@ -20,6 +21,16 @@ pub(crate) fn r#enum_def(s: &ItemEnum) -> syn::Result<DerivedTS> {
         Some(existing) => existing.clone(),
         None => s.ident.to_string(),
     };
+
+    let mut schema = Schema::new(name.to_string(), crate::schem::SchemaType::Enum);
+    for generic in s.generics.params.clone().into_iter() {
+        match generic {
+            syn::GenericParam::Type(ty) => {
+                schema.add_generic(ty.ident.clone());
+            }
+            _ => {}
+        }
+    }
 
     if let Some(attr_type_override) = &enum_attr.type_override {
         return type_override::type_override_enum(&enum_attr, &name, attr_type_override);
@@ -40,6 +51,7 @@ pub(crate) fn r#enum_def(s: &ItemEnum) -> syn::Result<DerivedTS> {
         format_variant(
             &mut formatted_variants,
             &mut dependencies,
+            &mut schema,
             &enum_attr,
             variant,
         )?;
@@ -58,13 +70,14 @@ pub(crate) fn r#enum_def(s: &ItemEnum) -> syn::Result<DerivedTS> {
         ts_name: name,
         concrete: enum_attr.concrete,
         bound: enum_attr.bound,
-        schema: None,
+        schema: Some(schema),
     })
 }
 
 fn format_variant(
     formatted_variants: &mut Vec<TokenStream>,
     dependencies: &mut Dependencies,
+    schema: &mut Schema,
     enum_attr: &EnumAttr,
     variant: &Variant,
 ) -> syn::Result<()> {
@@ -94,10 +107,13 @@ fn format_variant(
         // In internally tagged enums, we can tag the struct
         &name,
         &variant.fields,
+        &Generics::default(),
     )?;
 
     let variant_dependencies = variant_type.dependencies;
     let inline_type = variant_type.inline;
+
+    schema.add_variant(name.clone(), &variant.fields, true);
 
     let parsed_ty = match (&variant_attr.type_as, &variant_attr.type_override) {
         (Some(_), Some(_)) => syn_err_spanned!(variant; "`type` is not compatible with `as`"),
@@ -105,7 +121,9 @@ fn format_variant(
             dependencies.push(ty);
             quote!(<#ty as #crate_rename::TS>::name())
         }
-        (None, Some(ty)) => quote!(#ty.to_owned()),
+        (None, Some(ty)) => {
+            quote!(#ty.to_owned())
+        }
         (None, None) => {
             dependencies.append(variant_dependencies);
             inline_type
@@ -113,7 +131,9 @@ fn format_variant(
     };
 
     let formatted = match (untagged_variant, enum_attr.tagged()?) {
-        (true, _) | (_, Tagged::Untagged) => quote!(#parsed_ty),
+        (true, _) | (_, Tagged::Untagged) => {
+            quote!(#parsed_ty)
+        }
         (false, Tagged::Externally) => match &variant.fields {
             Fields::Unit => quote!(format!("\"{}\"", #name)),
             Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
@@ -128,7 +148,9 @@ fn format_variant(
                     quote!(format!("{{ \"{}\": {} }}", #name, #parsed_ty))
                 }
             }
-            _ => quote!(format!("{{ \"{}\": {} }}", #name, #parsed_ty)),
+            _ => {
+                quote!(format!("{{ \"{}\": {} }}", #name, #parsed_ty))
+            }
         },
         (false, Tagged::Adjacently { tag, content }) => match &variant.fields {
             Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
@@ -151,9 +173,11 @@ fn format_variant(
                 }
             }
             Fields::Unit => quote!(format!("{{ \"{}\": \"{}\" }}", #tag, #name)),
-            _ => quote!(
-                format!("{{ \"{}\": \"{}\", \"{}\": {} }}", #tag, #name, #content, #parsed_ty)
-            ),
+            _ => {
+                quote!(
+                    format!("{{ \"{}\": \"{}\", \"{}\": {} }}", #tag, #name, #content, #parsed_ty)
+                )
+            }
         },
         (false, Tagged::Internally { tag }) => match variant_type.inline_flattened {
             Some(_) => {
@@ -180,7 +204,9 @@ fn format_variant(
                         quote!(format!("{{ \"{}\": \"{}\" }} & {}", #tag, #name, #ty))
                     }
                 }
-                Fields::Unit => quote!(format!("{{ \"{}\": \"{}\" }}", #tag, #name)),
+                Fields::Unit => {
+                    quote!(format!("{{ \"{}\": \"{}\" }}", #tag, #name))
+                }
                 _ => {
                     quote!(format!("{{ \"{}\": \"{}\" }} & {}", #tag, #name, #parsed_ty))
                 }

@@ -1,7 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    spanned::Spanned, Field, FieldsNamed, GenericArgument, Path, PathArguments, Result, Type,
+    spanned::Spanned, Field, FieldsNamed, GenericArgument, Generics, Path, PathArguments, Result,
+    Type,
 };
 
 use crate::{
@@ -12,13 +13,26 @@ use crate::{
     DerivedTS,
 };
 
-pub(crate) fn named(attr: &StructAttr, name: &str, fields: &FieldsNamed) -> Result<DerivedTS> {
+pub(crate) fn named(
+    attr: &StructAttr,
+    name: &str,
+    fields: &FieldsNamed,
+    generics: &Generics,
+) -> Result<DerivedTS> {
     let crate_rename = attr.crate_rename();
 
     let mut formatted_fields = Vec::new();
     let mut flattened_fields = Vec::new();
     let mut dependencies = Dependencies::new(crate_rename.clone());
     let mut schema = Schema::new(name.to_string(), crate::schem::SchemaType::Struct);
+    for generic in generics.params.clone().into_iter() {
+        match generic {
+            syn::GenericParam::Type(ty) => {
+                schema.add_generic(ty.ident.clone());
+            }
+            _ => {}
+        }
+    }
 
     if let Some(tag) = &attr.tag {
         let formatted = format!("\"{}\": \"{}\",", tag, name);

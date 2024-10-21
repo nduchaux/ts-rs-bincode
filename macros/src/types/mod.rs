@@ -1,4 +1,4 @@
-use syn::{Fields, ItemStruct, Result};
+use syn::{Fields, Generics, ItemStruct, Result};
 
 use crate::{
     attr::{Attr, StructAttr},
@@ -17,11 +17,15 @@ pub(crate) use r#enum::r#enum_def;
 
 pub(crate) fn struct_def(s: &ItemStruct) -> Result<DerivedTS> {
     let attr = StructAttr::from_attrs(&s.attrs)?;
-
-    type_def(&attr, &s.ident.to_string(), &s.fields)
+    type_def(&attr, &s.ident.to_string(), &s.fields, &s.generics)
 }
 
-fn type_def(attr: &StructAttr, ident: &str, fields: &Fields) -> Result<DerivedTS> {
+fn type_def(
+    attr: &StructAttr,
+    ident: &str,
+    fields: &Fields,
+    generics: &Generics,
+) -> Result<DerivedTS> {
     attr.assert_validity(fields)?;
 
     let name = attr
@@ -38,7 +42,7 @@ fn type_def(attr: &StructAttr, ident: &str, fields: &Fields) -> Result<DerivedTS
     match fields {
         Fields::Named(named) => match named.named.len() {
             0 => unit::empty_object(attr, &name),
-            _ => named::named(attr, &name, named),
+            _ => named::named(attr, &name, named, generics),
         },
         Fields::Unnamed(unnamed) => match unnamed.unnamed.len() {
             0 => unit::empty_array(attr, &name),

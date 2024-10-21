@@ -50,6 +50,14 @@ enum Vehicle {
 }
 
 #[derive(Serialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+enum ParametricVehicle<T> {
+    Bicycle { color: T },
+    Car { brand: String, color: T },
+}
+
+#[derive(Serialize, TS)]
 #[ts(export)]
 struct Point<T>
 where

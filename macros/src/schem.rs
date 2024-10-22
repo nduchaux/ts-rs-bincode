@@ -172,13 +172,14 @@ impl Schema {
         if self.stype == SchemaType::Struct {
             for field in &self.fields {
                 if self.def.contains_key(&field.name) {
+                    let sref = field.sref.to_string();
+                    let last_type = _get_last_type_from_angle_brackets(sref.clone());
+                    let def = format!("#/definitions/{}", last_type);
+                    let final_type = sref.replace(&last_type, &def);
                     s.push_str(&format!(
-                    "    {{\n      \"name\": \"{}\",\n      \"type\": {{\n        \"type\": \"{}\",\n        \"$ref\": [{{\"{}\": \"{}\"}}]\n     }}\n    }},\n",
-                    field.name,
-                    field.sref.to_string(),
-                    _get_last_type_from_angle_brackets(field.sref.to_string()),
-                    format!("#/definitions/{}", _get_last_type_from_angle_brackets(field.sref.to_string()))
-                ));
+                        "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
+                        field.name, final_type
+                    ));
                 } else {
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
@@ -199,12 +200,14 @@ impl Schema {
                 ));
                 for field in &variant.fields {
                     if self.def.contains_key(&field.name) {
+                        let sref = field.sref.to_string();
+                        let last_type = _get_last_type_from_angle_brackets(sref.clone());
+                        let def = format!("#/definitions/{}", last_type);
+                        let final_type = sref.replace(&last_type, &def);
                         s.push_str(&format!(
-                            "        {{\n          \"name\": \"{}\",\n          \"type\": {{\n            \"type\": \"{}\",\n            \"$ref\": [{{\"{}\": \"{}\"}}]\n          }}\n        }},\n",
+                            "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
                             field.name,
-                            field.sref.to_string(),
-                            _get_last_type_from_angle_brackets(field.sref.to_string()),
-                            format!("#/definitions/{}", _get_last_type_from_angle_brackets(field.sref.to_string()))
+                            final_type,
                         ));
                     } else {
                         s.push_str(&format!(

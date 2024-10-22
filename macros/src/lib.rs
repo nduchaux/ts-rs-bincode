@@ -268,7 +268,19 @@ impl DerivedTS {
                     panic!("ty is empty")
                 }
                 let __ty: TokenStream = ty.parse().unwrap();
-                let _ty: TokenStream = ty.to_lowercase().parse().unwrap();
+                let _ty: TokenStream = ty
+                    // Replace any special characters with an underscore
+                    .replace(|c: char| !c.is_alphanumeric(), "_")
+                    // Remove duplicate underscores
+                    .replace("__", "_")
+                    .replace("__", "_")
+                    // Remove trailing underscores
+                    .trim_end_matches('_')
+                    .trim_start_matches('_')
+                    // Convert to lowercase
+                    .to_lowercase()
+                    .parse()
+                    .unwrap();
                 (_ty, __ty)
             });
             let def_dependencies = dependencies.clone().map(|(ty, _ty)| {

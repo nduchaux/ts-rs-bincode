@@ -17,6 +17,7 @@ macro_rules! impl_dummy {
             fn inline_flattened() -> String { panic!("{} cannot be flattened", Self::name()) }
             fn decl() -> String { panic!("{} cannot be declared", Self::name()) }
             fn decl_concrete() -> String { panic!("{} cannot be declared", Self::name()) }
+            fn schema(_e: bool) -> String { panic!("{} cannot be declared", Self::name()) }
         }
     )*};
 }
@@ -44,6 +45,9 @@ impl<T: TimeZone + 'static> TS for DateTime<T> {
     fn decl_concrete() -> String {
         panic!("{} cannot be declared", Self::name())
     }
+    fn schema(_e: bool) -> String {
+        panic!("{} cannot be declared", Self::name())
+    }
 }
 
 impl<T: TimeZone + 'static> TS for Date<T> {
@@ -64,6 +68,9 @@ impl<T: TimeZone + 'static> TS for Date<T> {
         panic!("{} cannot be declared", Self::name())
     }
     fn decl_concrete() -> String {
+        panic!("{} cannot be declared", Self::name())
+    }
+    fn schema(_e: bool) -> String {
         panic!("{} cannot be declared", Self::name())
     }
 }

@@ -77,6 +77,7 @@ impl Schema {
 
     pub fn add_variant_field(&mut self, name: String, stype: &Type, include_in_def: bool) {
         // panic!("generics: {:?}", self.generics);
+        // panic!("stype: {:?}", stype.to_token_stream().to_string());
         if include_in_def {
             let type_string = stype.to_token_stream().to_string();
             if !type_string.contains("i8")
@@ -97,7 +98,10 @@ impl Schema {
                 // panic!("{} is not implemented", text);
                 self.def
                     // .insert(name.clone(), stype.to_token_stream().to_string());
-                    .insert(name.clone(), get_last_type_from_angle_brackets(stype));
+                    .insert(
+                        name.clone(),
+                        get_last_type_from_angle_brackets(stype, self.generics.clone()),
+                    );
             }
         }
 
@@ -136,7 +140,10 @@ impl Schema {
                 // panic!("{} is not implemented", text);
                 self.def
                     // .insert(name.clone(), stype.to_token_stream().to_string());
-                    .insert(name.clone(), get_last_type_from_angle_brackets(stype));
+                    .insert(
+                        name.clone(),
+                        get_last_type_from_angle_brackets(stype, self.generics.clone()),
+                    );
             }
         }
         self.fields.push(SchemaField {
@@ -173,7 +180,8 @@ impl Schema {
             for field in &self.fields {
                 if self.def.contains_key(&field.name) {
                     let sref = field.sref.to_string();
-                    let last_type = _get_last_type_from_angle_brackets(sref.clone());
+                    let last_type =
+                        _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                     let def = format!("#/definitions/{}", last_type);
                     let final_type = sref.replace(&last_type, &def);
                     s.push_str(&format!(
@@ -201,7 +209,8 @@ impl Schema {
                 for field in &variant.fields {
                     if self.def.contains_key(&field.name) {
                         let sref = field.sref.to_string();
-                        let last_type = _get_last_type_from_angle_brackets(sref.clone());
+                        let last_type =
+                            _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                         let def = format!("#/definitions/{}", last_type);
                         let final_type = sref.replace(&last_type, &def);
                         s.push_str(&format!(
@@ -225,7 +234,18 @@ impl Schema {
         // Definitions part
         s.push_str("  \"definitions\": {\n");
         for (_, def) in &self.def {
-            s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, def.to_uppercase()));
+            let _def = def
+                // Replace any special characters with an underscore
+                .replace(|c: char| !c.is_alphanumeric(), "_")
+                // Remove duplicate underscores
+                .replace("__", "_")
+                .replace("__", "_")
+                // Remove trailing underscores
+                .trim_end_matches('_')
+                .trim_start_matches('_')
+                // Convert to lowercase
+                .to_uppercase();
+            s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
         }
         s.push_str("  }\n}");
 
@@ -233,17 +253,36 @@ impl Schema {
     }
 }
 
-fn _get_last_type_from_angle_brackets(type_string: String) -> String {
+fn _get_last_type_from_angle_brackets(type_string: String, generics: Vec<String>) -> String {
     let start = type_string.find('<').unwrap_or(0);
     let end = type_string.rfind('>').unwrap_or(type_string.len());
     if start == 0 || end == type_string.len() {
         return type_string;
     }
-    let type_string = type_string[start + 1..end].to_string();
-    return type_string.trim().to_string();
+    let _type_string = type_string[start + 1..end].to_string();
+    if _type_string.contains('<') {
+        return _get_last_type_from_angle_brackets(_type_string, generics);
+    }
+    if generics.iter().any(|g| _type_string.contains(g)) {
+        return type_string.trim().to_string();
+    }
+    return _type_string.trim().to_string();
 }
 
-fn get_last_type_from_angle_brackets(type_: &Type) -> String {
+fn get_last_type_from_angle_brackets(type_: &Type, generics: Vec<String>) -> String {
     let type_string = type_.to_token_stream().to_string();
-    return _get_last_type_from_angle_brackets(type_string);
+    return _get_last_type_from_angle_brackets(type_string, generics);
 }
+
+// fn _remove_generics_from_angle_brackets(type_string: String, generics: Vec<String>) -> String {
+//     let mut type_string = type_string;
+//     for generic in generics {
+//         type_string = type_string.replace(&format!("< {} >", generic), "");
+//     }
+//     return type_string;
+// }
+
+// fn remove_generics_from_angle_brackets(type_: &Type, generics: Vec<String>) -> String {
+//     let type_string = type_.to_token_stream().to_string();
+//     return _remove_generics_from_angle_brackets(type_string, generics);
+// }

@@ -38,9 +38,13 @@ struct DerivedTS {
 
 impl DerivedTS {
     fn into_impl(mut self, rust_ty: Ident, generics: Generics) -> TokenStream {
-        let export = self
-            .export
-            .then(|| self.generate_export_test(&rust_ty, &generics));
+        #[cfg(feature = "default-export")]
+        let default_export = true;
+        #[cfg(not(feature = "default-export"))]
+        let default_export = false;
+
+        let export =
+            (self.export || default_export).then(|| self.generate_export_test(&rust_ty, &generics));
 
         let output_path_fn = {
             let path = match self.export_to.as_deref() {
@@ -418,6 +422,13 @@ impl DerivedTS {
                 format!("type {}{generics} = {inline};", #name)
             }
         }
+    }
+}
+
+fn default_export() -> bool {
+    match std::env::var("TS_RS_EXPORT") {
+        Err(..) => false,
+        Ok(_) => true,
     }
 }
 

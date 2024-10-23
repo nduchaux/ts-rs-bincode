@@ -37,6 +37,7 @@ no-serde-warnings = ["ts-rs-macros/no-serde-warnings"]
 import-esm = []
 tokio-impl = ["tokio"]
 json-schema = []
+default-export = ["ts-rs-macros/default-export"]
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

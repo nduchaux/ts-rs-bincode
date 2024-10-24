@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use quote::{format_ident, ToTokens};
+use quote::ToTokens;
 use syn::{Fields, Ident, Type};
 
 #[derive(PartialEq)]
@@ -99,7 +99,7 @@ impl Schema {
                 self.def
                     // .insert(name.clone(), stype.to_token_stream().to_string());
                     .insert(
-                        name.clone(),
+                        type_string.clone(),
                         get_last_type_from_angle_brackets(stype, self.generics.clone()),
                     );
             }
@@ -141,7 +141,7 @@ impl Schema {
                 self.def
                     // .insert(name.clone(), stype.to_token_stream().to_string());
                     .insert(
-                        name.clone(),
+                        type_string,
                         get_last_type_from_angle_brackets(stype, self.generics.clone()),
                     );
             }
@@ -178,7 +178,7 @@ impl Schema {
         // Fields part
         if self.stype == SchemaType::Struct {
             for field in &self.fields {
-                if self.def.contains_key(&field.name) {
+                if self.def.contains_key(&field.sref.to_string()) {
                     let sref = field.sref.to_string();
                     let last_type =
                         _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
@@ -203,11 +203,17 @@ impl Schema {
         if self.stype == SchemaType::Enum {
             for variant in &self.variants {
                 s.push_str(&format!(
-                    "    {{\n      \"name\": \"{}\",\n      \"fields\": [\n",
+                    "    {{\n      \"name\": \"{}\",\n      \"type\": \"struct\",\n      \"fields\": [\n",
                     variant.name
                 ));
+                let mut index = 0;
                 for field in &variant.fields {
-                    if self.def.contains_key(&field.name) {
+                    let name = if field.name.is_empty() {
+                        index.to_string()
+                    } else {
+                        field.name.clone()
+                    };
+                    if self.def.contains_key(&field.sref.to_string()) {
                         let sref = field.sref.to_string();
                         let last_type =
                             _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
@@ -215,16 +221,17 @@ impl Schema {
                         let final_type = sref.replace(&last_type, &def);
                         s.push_str(&format!(
                             "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
-                            field.name,
+                            name,
                             final_type,
                         ));
                     } else {
                         s.push_str(&format!(
                             "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
-                            field.name,
+                            name,
                             field.sref.to_string()
                         ));
                     }
+                    index += 1;
                 }
                 s.push_str("      ]\n    },\n");
             }

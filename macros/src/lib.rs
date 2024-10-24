@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
-use schem::Schema;
 use syn::{
     parse_quote, spanned::Spanned, ConstParam, GenericParam, Generics, Item, LifetimeParam, Path,
     Result, Type, TypeArray, TypeParam, TypeParen, TypePath, TypeReference, TypeSlice, TypeTuple,
@@ -240,9 +239,9 @@ impl DerivedTS {
     // };
     fn generate_schem_fn(
         &self,
-        rust_ty: &Ident,
+        _rust_ty: &Ident,
         _generics: &Generics,
-        dependencies: &Dependencies,
+        _dependencies: &Dependencies,
     ) -> TokenStream {
         let crate_rename = &self.crate_rename;
         let _o_name = self.ts_name.clone();
@@ -422,13 +421,6 @@ impl DerivedTS {
                 format!("type {}{generics} = {inline};", #name)
             }
         }
-    }
-}
-
-fn default_export() -> bool {
-    match std::env::var("TS_RS_EXPORT") {
-        Err(..) => false,
-        Ok(_) => true,
     }
 }
 

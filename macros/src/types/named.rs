@@ -152,6 +152,7 @@ fn format_field(
         .unwrap_or_else(|| {
             if field_attr.inline {
                 dependencies.append_from(ty);
+                include_in_def = true;
                 quote!(<#ty as #crate_rename::TS>::inline())
             } else {
                 dependencies.push(ty);

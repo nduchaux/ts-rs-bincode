@@ -1,11 +1,10 @@
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{FieldsUnnamed, Result};
 
 use crate::{
     attr::{Attr, ContainerAttr, FieldAttr, StructAttr},
     deps::Dependencies,
     schem::Schema,
-    utils::raw_name_to_ts_field,
     DerivedTS,
 };
 

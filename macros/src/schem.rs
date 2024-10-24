@@ -183,7 +183,7 @@ impl Schema {
                     let sref = field.sref.to_string();
                     let last_type =
                         _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
-                    let def = format!("#/definitions/{}", last_type);
+                    let def = format!("#/definitions/{}", last_type).replace(" ", "");
                     let final_type = sref.replace(&last_type, &def);
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
@@ -218,7 +218,7 @@ impl Schema {
                         let sref: String = field.sref.to_string();
                         // let last_type =
                         //     _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
-                        let def = format!("#/definitions/{}", sref);
+                        let def = format!("#/definitions/{}", sref).replace(" ", "");
                         // panic!("last_type: {:?}", last_type);
                         let final_type = sref.replace(&sref, &def);
                         // panic!("final_type: {:?}", final_type);
@@ -255,6 +255,7 @@ impl Schema {
                 .trim_start_matches('_')
                 // Convert to lowercase
                 .to_uppercase();
+            let def = def.replace(" ", "");
             s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
         }
         s.push_str("  },\n");
@@ -262,7 +263,7 @@ impl Schema {
         // Generics part
         s.push_str("  \"generics\": {\n");
         for generic in &self.generics {
-            s.push_str(&format!("    \"{}\": &&${}$&&,\n", generic, generic));
+            s.push_str(&format!("    \"{}\": &&&&{}&&&&,\n", generic, generic));
         }
         s.push_str("  }\n}");
 

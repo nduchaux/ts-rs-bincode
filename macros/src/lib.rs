@@ -325,7 +325,7 @@ impl DerivedTS {
                 let ty_ident_string = ty.ident.to_string();
                 let _ty = ty_ident_string.to_lowercase();
                 let _ty: TokenStream = _ty.parse().unwrap();
-                let fmt: String = format!("&&${}$&&", ty_ident_string.to_uppercase());
+                let fmt: String = format!("&&&&{}&&&&", ty_ident_string);
                 quote! {
                     let schem = schem.replace(#fmt, &#_ty);
                 }

@@ -35,7 +35,7 @@ pub(crate) fn newtype(attr: &StructAttr, name: &str, fields: &FieldsUnnamed) -> 
         }
     };
 
-    schema.add_field("0".to_string(), &inner_ty, include_in_def);
+    schema.add_field("0".to_string(), &inner_ty, true);
 
     let inline_def = match field_attr.type_override {
         Some(ref o) => quote!(#o.to_owned()),

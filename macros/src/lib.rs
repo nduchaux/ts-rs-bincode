@@ -295,6 +295,14 @@ impl DerivedTS {
                     }
                 }
             });
+            let def_generics = _generics.type_params().map(|ty| {
+                let _ty = ty.ident.to_string();
+                let _ty = _ty.to_lowercase();
+                let _ty: TokenStream = _ty.parse().unwrap();
+                quote! {
+                    let #_ty: String = <#ty as #crate_rename::TS>::schema(false);
+                }
+            });
             let repl_dependencies = dependencies.map(|(ty, _ty)| {
                 if _ty.to_token_stream().to_string() == _o_name {
                     let fmt_def: String =
@@ -313,9 +321,19 @@ impl DerivedTS {
                     }
                 }
             });
+            let repl_generics = _generics.type_params().map(|ty| {
+                let ty_ident_string = ty.ident.to_string();
+                let _ty = ty_ident_string.to_lowercase();
+                let _ty: TokenStream = _ty.parse().unwrap();
+                let fmt: String = format!("&&${}$&&", ty_ident_string.to_uppercase());
+                quote! {
+                    let schem = schem.replace(#fmt, &#_ty);
+                }
+            });
             return quote! {
                 fn schema(export: bool) -> String {
                     #(#def_dependencies)*
+                    #(#def_generics)*
                     let mut schem = "".to_string();
                     if (export) {
                         schem = format!("const {} = {}", #name, #schema);
@@ -323,6 +341,7 @@ impl DerivedTS {
                         schem = format!("{}", #schema);
                     }
                     #(#repl_dependencies)*
+                    #(#repl_generics)*
                     schem
                 }
             };

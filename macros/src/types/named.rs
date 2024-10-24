@@ -175,7 +175,7 @@ fn format_field(
         false => format!("\n{}", &field_attr.docs),
     };
 
-    schema.add_field(valid_name.clone(), &parsed_ty, include_in_def);
+    schema.add_field(valid_name.clone(), &parsed_ty, true);
 
     formatted_fields.push(quote! {
         format!("{}{}{}: {},", #docs, #valid_name, #optional_annotation, #formatted_ty)

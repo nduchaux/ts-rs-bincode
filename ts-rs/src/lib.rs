@@ -1157,6 +1157,6 @@ impl TS for Dummy {
     }
 
     fn schema(_: bool) -> String {
-        panic!("{} cannot be schematized", Self::name())
+        return "{}".to_owned();
     }
 }

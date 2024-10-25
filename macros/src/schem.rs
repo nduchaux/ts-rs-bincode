@@ -185,7 +185,7 @@ impl Schema {
                         _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                     let def = format!("#/definitions/{}", last_type)
                         .replace(" ", "")
-                        .replace("::", "_");
+                        .replace("\n", "");
                     let final_type = sref.replace(&last_type, &def);
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
@@ -222,7 +222,7 @@ impl Schema {
                         //     _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                         let def = format!("#/definitions/{}", sref)
                             .replace(" ", "")
-                            .replace("::", "_");
+                            .replace("\n", "");
                         // panic!("last_type: {:?}", last_type);
                         let final_type = sref.replace(&sref, &def);
                         // panic!("final_type: {:?}", final_type);
@@ -259,7 +259,7 @@ impl Schema {
                 .trim_start_matches('_')
                 // Convert to lowercase
                 .to_uppercase();
-            let def = def.replace(" ", "").replace("::", "_");
+            let def = def.replace(" ", "").replace("\n", "");
             s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
         }
         s.push_str("  },\n");

@@ -345,7 +345,10 @@ fn type_to_string(ty: &Type) -> String {
 fn is_primitive_type(type_string: &str) -> bool {
     matches!(
         type_string.as_ref(),
-        "i8" | "i16"
+        "usize"
+            | "isize"
+            | "i8"
+            | "i16"
             | "i32"
             | "i64"
             | "u8"

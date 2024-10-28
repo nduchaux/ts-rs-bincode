@@ -191,6 +191,26 @@ impl Schema {
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
                         field.name, final_type
                     ));
+                // Example: Option < User > => Option < #/definitions/User >
+                // Example: Vec < User > => Vec < #/definitions/User >
+                // Example: Option < Vec < User >> => Option < Vec < #/definitions/User > >
+                // Example: Option < Property < User > > => Option < #/definitions/ Property < #/definitions/User > >
+                } else if self
+                    .def
+                    .iter()
+                    .any(|(k, _)| field.sref.to_string().contains(k))
+                {
+                    let sref = field.sref.to_string();
+                    let last_type =
+                        _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
+                    let def = format!("#/definitions/{}", last_type)
+                        .replace(" ", "")
+                        .replace("\n", "");
+                    let final_type = sref.replace(&last_type, &def);
+                    s.push_str(&format!(
+                        "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
+                        field.name, final_type
+                    ));
                 } else {
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",

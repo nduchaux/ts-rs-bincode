@@ -184,9 +184,9 @@ impl Schema {
                     let last_type =
                         _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                     let def = format!("#/definitions/{}", last_type)
-                        .replace(" ", "")
-                        .replace("\n", "");
-                    let final_type = sref.replace(&last_type, &def);
+                        .replace("\n", "")
+                        .replace(" ", "");
+                    let final_type = sref.replace(&last_type, &def).replace(" ", "");
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
                         field.name, final_type
@@ -204,9 +204,9 @@ impl Schema {
                     let last_type =
                         _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                     let def = format!("#/definitions/{}", last_type)
-                        .replace(" ", "")
-                        .replace("\n", "");
-                    let final_type = sref.replace(&last_type, &def);
+                        .replace("\n", "")
+                        .replace(" ", "");
+                    let final_type = sref.replace(&last_type, &def).replace(" ", "");
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
                         field.name, final_type
@@ -215,7 +215,7 @@ impl Schema {
                     s.push_str(&format!(
                         "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
                         field.name,
-                        field.sref.to_string()
+                        field.sref.to_string().replace(" ", "")
                     ));
                 }
             }
@@ -241,10 +241,10 @@ impl Schema {
                         // let last_type =
                         //     _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
                         let def = format!("#/definitions/{}", sref)
-                            .replace(" ", "")
-                            .replace("\n", "");
+                            .replace("\n", "")
+                            .replace(" ", "");
                         // panic!("last_type: {:?}", last_type);
-                        let final_type = sref.replace(&sref, &def);
+                        let final_type = sref.replace(&sref, &def).replace(" ", "");
                         // panic!("final_type: {:?}", final_type);
                         s.push_str(&format!(
                             "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
@@ -255,7 +255,7 @@ impl Schema {
                         s.push_str(&format!(
                             "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
                             name,
-                            field.sref.to_string()
+                            field.sref.to_string().replace(" ", "")
                         ));
                     }
                     index += 1;
@@ -271,6 +271,7 @@ impl Schema {
             let _def = def
                 // Replace any special characters with an underscore
                 .replace(|c: char| !c.is_alphanumeric(), "_")
+                .replace(" ", "")
                 // Remove duplicate underscores
                 .replace("__", "_")
                 .replace("__", "_")
@@ -279,7 +280,7 @@ impl Schema {
                 .trim_start_matches('_')
                 // Convert to lowercase
                 .to_uppercase();
-            let def = def.replace(" ", "").replace("\n", "");
+            let def = def.replace("\n", "").replace(" ", "");
             s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
         }
         s.push_str("  },\n");

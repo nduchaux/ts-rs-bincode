@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use quote::ToTokens;
-use syn::{Fields, GenericArgument, Ident, PathArguments, Type, TypePath};
+use syn::{Fields, GenericArgument, Ident, PathArguments, Type};
 
 #[derive(PartialEq)]
 pub enum SchemaType {
@@ -260,30 +260,34 @@ impl Schema {
                     }
                     index += 1;
                 }
-                s.push_str("      ]\n    },\n");
-            }
-            s.push_str("  ],\n");
-        }
+                s.push_str("      ],\n");
 
-        // Definitions part
-        s.push_str("  \"definitions\": {\n");
-        for (_, def) in &self.def {
-            let _def = def
-                // Replace any special characters with an underscore
-                .replace(|c: char| !c.is_alphanumeric(), "_")
-                .replace(" ", "")
-                // Remove duplicate underscores
-                .replace("__", "_")
-                .replace("__", "_")
-                // Remove trailing underscores
-                .trim_end_matches('_')
-                .trim_start_matches('_')
-                // Convert to lowercase
-                .to_uppercase();
-            let def = def.replace("\n", "").replace(" ", "");
-            s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
+                // Definitions part
+                s.push_str("  \"definitions\": {\n");
+                for field in &variant.fields {
+                    if self.def.contains_key(&field.sref.to_string()) {
+                        let sref = field.sref.to_string();
+                        let _def = sref
+                            // Replace any special characters with an underscore
+                            .replace(|c: char| !c.is_alphanumeric(), "_")
+                            .replace(" ", "")
+                            // Remove duplicate underscores
+                            .replace("__", "_")
+                            .replace("__", "_")
+                            // Remove trailing underscores
+                            .trim_end_matches('_')
+                            .trim_start_matches('_')
+                            // Convert to lowercase
+                            .to_uppercase();
+                        let def = sref.replace("\n", "").replace(" ", "");
+                        s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
+                    }
+                }
+                s.push_str("        },\n");
+                s.push_str("        },\n");
+            }
+            s.push_str("    ],\n");
         }
-        s.push_str("  },\n");
 
         // Generics part
         s.push_str("  \"generics\": {\n");
@@ -313,53 +317,6 @@ fn _get_last_type_from_angle_brackets(type_string: String, generics: Vec<String>
         return type_string.trim().to_string();
     }
     return _type_string.trim().to_string();
-}
-
-fn get_last_type_from_angle_brackets(type_: &Type, generics: Vec<String>) -> String {
-    let type_string = type_.to_token_stream().to_string();
-    return _get_last_type_from_angle_brackets(type_string, generics);
-}
-
-fn type_path_to_string(type_path: &TypePath) -> String {
-    type_path
-        .path
-        .segments
-        .iter()
-        .map(|segment| {
-            let mut segment_str = segment.ident.to_string();
-            if let PathArguments::AngleBracketed(args) = &segment.arguments {
-                let args_str = args
-                    .args
-                    .iter()
-                    .map(|arg| match arg {
-                        GenericArgument::Type(t) => type_to_string(t),
-                        _ => "".to_string(),
-                    })
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                segment_str = format!("{}<{}>", segment_str, args_str);
-            }
-            segment_str
-        })
-        .collect::<Vec<String>>()
-        .join("::")
-}
-
-fn type_to_string(ty: &Type) -> String {
-    match ty {
-        Type::Path(type_path) => type_path_to_string(type_path),
-        Type::Tuple(type_tuple) => {
-            let elems_str = type_tuple
-                .elems
-                .iter()
-                .map(|elem| type_to_string(elem))
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("({})", elems_str)
-        }
-        // Ajoutez d'autres cas si nécessaire
-        _ => "".to_string(),
-    }
 }
 
 // Fonction pour vérifier si un type est primitif

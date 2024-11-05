@@ -289,6 +289,28 @@ impl Schema {
             s.push_str("    ],\n");
         }
 
+        // Definitions part
+        if self.stype == SchemaType::Struct {
+            s.push_str("  \"definitions\": {\n");
+            for (_, def) in &self.def {
+                let _def = def
+                    // Replace any special characters with an underscore
+                    .replace(|c: char| !c.is_alphanumeric(), "_")
+                    .replace(" ", "")
+                    // Remove duplicate underscores
+                    .replace("__", "_")
+                    .replace("__", "_")
+                    // Remove trailing underscores
+                    .trim_end_matches('_')
+                    .trim_start_matches('_')
+                    // Convert to lowercase
+                    .to_uppercase();
+                let def = def.replace("\n", "").replace(" ", "");
+                s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
+            }
+            s.push_str("  },\n");
+        }
+
         // Generics part
         s.push_str("  \"generics\": {\n");
         for generic in &self.generics {

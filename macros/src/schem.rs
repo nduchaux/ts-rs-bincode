@@ -132,7 +132,7 @@ impl Schema {
         if let Type::Path(type_path) = stype {
             if let Some(last_segment) = type_path.path.segments.last() {
                 let ident = last_segment.ident.to_string();
-                if ident == "Option" || ident == "Vec" || ident == "Result"
+                if ident == "Option" || ident == "Vec" || ident == "Result" || ident == "HashMap"
                 /* ajoutez d'autres types génériques si nécessaire */
                 {
                     if let PathArguments::AngleBracketed(args) = &last_segment.arguments {
@@ -201,47 +201,15 @@ impl Schema {
         );
 
         // Fields part
+        // Partie du code modifiée
         if self.stype == SchemaType::Struct {
             for field in &self.fields {
-                if self.def.contains_key(&field.sref.to_string()) {
-                    let sref = field.sref.to_string();
-                    let last_type =
-                        _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
-                    let def = format!("#/definitions/{}", last_type)
-                        .replace("\n", "")
-                        .replace(" ", "");
-                    let final_type = sref.replace(&last_type, &def).replace(" ", "");
-                    s.push_str(&format!(
-                        "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
-                        field.name, final_type
-                    ));
-                // Example: Option < User > => Option < #/definitions/User >
-                // Example: Vec < User > => Vec < #/definitions/User >
-                // Example: Option < Vec < User >> => Option < Vec < #/definitions/User > >
-                // Example: Option < Property < User > > => Option < #/definitions/ Property < #/definitions/User > >
-                } else if self
-                    .def
-                    .iter()
-                    .any(|(k, _)| field.sref.to_string().contains(k))
-                {
-                    let sref = field.sref.to_string();
-                    let last_type =
-                        _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
-                    let def = format!("#/definitions/{}", last_type)
-                        .replace("\n", "")
-                        .replace(" ", "");
-                    let final_type = sref.replace(&last_type, &def).replace(" ", "");
-                    s.push_str(&format!(
-                        "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
-                        field.name, final_type
-                    ));
-                } else {
-                    s.push_str(&format!(
-                        "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
-                        field.name,
-                        field.sref.to_string().replace(" ", "")
-                    ));
-                }
+                let sref = field.sref.to_string();
+                let final_type = replace_types(&sref, &self.def, &self.generics).replace(" ", "");
+                s.push_str(&format!(
+                    "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
+                    field.name, final_type
+                ));
             }
             s.push_str("  ],\n");
         }
@@ -351,6 +319,51 @@ impl Schema {
 
         s
     }
+}
+
+fn replace_types(sref: &str, defs: &HashMap<String, String>, generics: &[String]) -> String {
+    let mut result = String::new();
+    let mut chars = sref.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '<' {
+            result.push(c);
+            let mut inner_type = String::new();
+            let mut bracket_count = 1;
+            while let Some(&next_c) = chars.peek() {
+                chars.next();
+                inner_type.push(next_c);
+                if next_c == '<' {
+                    bracket_count += 1;
+                } else if next_c == '>' {
+                    bracket_count -= 1;
+                    if bracket_count == 0 {
+                        break;
+                    }
+                }
+            }
+            // Appel récursif pour les types à l'intérieur des crochets
+            let replaced_inner = replace_types(&inner_type[..inner_type.len() - 1], defs, generics);
+            result.push_str(&replaced_inner);
+            result.push('>');
+        } else if c.is_alphanumeric() || c == '_' {
+            let mut type_name = c.to_string();
+            while let Some(&next_c) = chars.peek() {
+                if next_c.is_alphanumeric() || next_c == '_' {
+                    type_name.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+            if defs.contains_key(&type_name) && !generics.contains(&type_name) {
+                result.push_str(&format!("#/definitions/{}", type_name));
+            } else {
+                result.push_str(&type_name);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 fn _get_last_type_from_angle_brackets(type_string: String, generics: Vec<String>) -> String {

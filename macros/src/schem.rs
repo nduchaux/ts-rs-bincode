@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use quote::ToTokens;
-use syn::{Fields, GenericArgument, Ident, PathArguments, Type};
+use syn::{Expr, Fields, GenericArgument, Ident, PathArguments, Token, Type};
 
 #[derive(PartialEq)]
 pub enum SchemaType {
@@ -23,6 +23,7 @@ pub struct SchemaField {
 pub struct SchemaVariant {
     name: String,
     fields: Vec<SchemaField>,
+    discriminant: Option<i32>,
 }
 
 impl SchemaFieldRef {
@@ -60,10 +61,33 @@ impl Schema {
         self.generics.push(ident.to_string());
     }
 
-    pub fn add_variant(&mut self, name: String, fields: &Fields, include_in_def: bool) {
+    pub fn add_variant(
+        &mut self,
+        name: String,
+        fields: &Fields,
+        discriminant: &Option<(Token![=], Expr)>,
+        include_in_def: bool,
+    ) {
+        let discriminant = match discriminant {
+            Some((_, expr)) => {
+                if let syn::Expr::Lit(lit) = expr {
+                    if let syn::Lit::Int(int) = &lit.lit {
+                        Some(int.base10_parse::<i32>().unwrap())
+                    } else {
+                        None
+                    }
+                    // lit.to_token_stream().to_string()
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+
         self.variants.push(SchemaVariant {
             name,
             fields: Vec::new(),
+            discriminant,
         });
 
         for field in fields {
@@ -224,12 +248,17 @@ impl Schema {
 
         // Variants part
         if self.stype == SchemaType::Enum {
+            let mut variant_index: i32 = 0;
             for variant in &self.variants {
+                if let Some(discriminant) = variant.discriminant {
+                    variant_index = discriminant;
+                }
                 s.push_str(&format!(
-                    "    {{\n      \"name\": \"{}\",\n      \"type\": \"struct\",\n      \"fields\": [\n",
-                    variant.name
+                    "    {{\n      \"name\": \"{}\",\n      \"discriminant\": {},\n      \"type\": \"struct\",\n      \"fields\": [\n",
+                    variant.name,
+                    variant_index
                 ));
-                let mut index = 0;
+                let mut index: i32 = 0;
                 for field in &variant.fields {
                     let name = if field.name.is_empty() {
                         index.to_string()
@@ -285,6 +314,8 @@ impl Schema {
                 }
                 s.push_str("        },\n");
                 s.push_str("        },\n");
+
+                variant_index += 1;
             }
             s.push_str("    ],\n");
         }

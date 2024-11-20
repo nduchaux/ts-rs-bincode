@@ -113,7 +113,7 @@ fn format_variant(
     let variant_dependencies = variant_type.dependencies;
     let inline_type = variant_type.inline;
 
-    schema.add_variant(name.clone(), &variant.fields, true);
+    schema.add_variant(name.clone(), &variant.fields, &variant.discriminant, true);
 
     let parsed_ty = match (&variant_attr.type_as, &variant_attr.type_override) {
         (Some(_), Some(_)) => syn_err_spanned!(variant; "`type` is not compatible with `as`"),

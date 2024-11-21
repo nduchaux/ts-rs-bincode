@@ -222,10 +222,10 @@ impl Schema {
                     variant_index = discriminant;
                 }
                 s.push_str(&format!(
-                    "    {{\n      \"name\": \"{}\",\n      \"discriminant\": {},\n      \"type\": \"struct\",\n      \"fields\": [\n",
-                    variant.name,
-                    variant_index
-                ));
+            "    {{\n      \"name\": \"{}\",\n      \"discriminant\": {},\n      \"type\": \"struct\",\n      \"fields\": [\n",
+            variant.name,
+            variant_index
+        ));
                 let mut index: i32 = 0;
                 for field in &variant.fields {
                     let name = if field.name.is_empty() {
@@ -233,28 +233,14 @@ impl Schema {
                     } else {
                         field.name.clone()
                     };
-                    if self.def.contains_key(&field.sref.to_string()) {
-                        let sref: String = field.sref.to_string();
-                        // let last_type =
-                        //     _get_last_type_from_angle_brackets(sref.clone(), self.generics.clone());
-                        let def = format!("#/definitions/{}", sref)
-                            .replace("\n", "")
-                            .replace(" ", "");
-                        // panic!("last_type: {:?}", last_type);
-                        let final_type = sref.replace(&sref, &def).replace(" ", "");
-                        // panic!("final_type: {:?}", final_type);
-                        s.push_str(&format!(
-                            "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
-                            name,
-                            final_type,
-                        ));
-                    } else {
-                        s.push_str(&format!(
-                            "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
-                            name,
-                            field.sref.to_string().replace(" ", "")
-                        ));
-                    }
+                    let sref = field.sref.to_string();
+                    let final_type =
+                        replace_types(&sref, &self.def, &self.generics).replace(" ", "");
+                    s.push_str(&format!(
+                "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
+                name,
+                final_type,
+            ));
                     index += 1;
                 }
                 s.push_str("      ],\n");
@@ -262,22 +248,22 @@ impl Schema {
                 // Definitions part
                 s.push_str("  \"definitions\": {\n");
                 for field in &variant.fields {
-                    if self.def.contains_key(&field.sref.to_string()) {
-                        let sref = field.sref.to_string();
-                        let _def = sref
-                            // Replace any special characters with an underscore
-                            .replace(|c: char| !c.is_alphanumeric(), "_")
-                            .replace(" ", "")
-                            // Remove duplicate underscores
-                            .replace("__", "_")
-                            .replace("__", "_")
-                            // Remove trailing underscores
-                            .trim_end_matches('_')
-                            .trim_start_matches('_')
-                            // Convert to lowercase
-                            .to_uppercase();
-                        let def = sref.replace("\n", "").replace(" ", "");
-                        s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
+                    let sref = field.sref.to_string();
+                    let type_names = extract_type_names(&sref);
+                    for type_name in type_names {
+                        if self.def.contains_key(&type_name) && !self.generics.contains(&type_name)
+                        {
+                            let def_name = type_name
+                                .replace(|c: char| !c.is_alphanumeric(), "_")
+                                .replace(" ", "")
+                                .replace("__", "_")
+                                .replace("__", "_")
+                                .trim_end_matches('_')
+                                .trim_start_matches('_')
+                                .to_uppercase();
+                            let def_key = type_name.replace("\n", "").replace(" ", "");
+                            s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def_key, def_name));
+                        }
                     }
                 }
                 s.push_str("        },\n");
@@ -319,6 +305,29 @@ impl Schema {
 
         s
     }
+}
+
+fn extract_type_names(sref: &str) -> Vec<String> {
+    let mut type_names = Vec::new();
+    let mut chars = sref.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_alphanumeric() || c == '_' {
+            let mut type_name = c.to_string();
+            while let Some(&next_c) = chars.peek() {
+                if next_c.is_alphanumeric() || next_c == '_' {
+                    type_name.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+            type_names.push(type_name);
+        } else if c == '<' || c == ',' {
+            continue;
+        } else {
+            // Ignorer les autres caractères
+        }
+    }
+    type_names
 }
 
 fn replace_types(sref: &str, defs: &HashMap<String, String>, generics: &[String]) -> String {

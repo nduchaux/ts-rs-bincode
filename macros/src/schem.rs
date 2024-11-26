@@ -112,13 +112,7 @@ impl Schema {
                 Type::Array(t) => {
                     SchemaFieldRef::ItemsRefs(format!("{}", t.elem.to_token_stream().to_string()))
                 }
-                Type::Path(t) => {
-                    if let Some(last_segment) = t.path.segments.last() {
-                        SchemaFieldRef::Refs(last_segment.ident.to_string())
-                    } else {
-                        SchemaFieldRef::Refs("Unknown".to_string())
-                    }
-                }
+                Type::Path(t) => SchemaFieldRef::Refs(format!("{}", remove_create_type_path(t))),
                 _ => SchemaFieldRef::Type(stype.to_token_stream().to_string()),
             },
         });
@@ -149,7 +143,7 @@ impl Schema {
                     }
                 } else {
                     // Type non primitif et non générique connu, on l'ajoute aux définitions
-                    // self.def.insert(type_string.clone(), type_string);
+                    self.def.insert(type_string.clone(), type_string.clone());
 
                     // Vous pouvez également traiter les sous-types si ce type contient des types internes
                     if let PathArguments::AngleBracketed(args) = &last_segment.arguments {
@@ -183,13 +177,7 @@ impl Schema {
                 Type::Array(t) => {
                     SchemaFieldRef::ItemsRefs(format!("{}", t.elem.to_token_stream().to_string()))
                 }
-                Type::Path(t) => {
-                    if let Some(last_segment) = t.path.segments.last() {
-                        SchemaFieldRef::Refs(last_segment.ident.to_string())
-                    } else {
-                        SchemaFieldRef::Refs("Unknown".to_string())
-                    }
-                }
+                Type::Path(t) => SchemaFieldRef::Refs(format!("{}", remove_create_type_path(t))),
                 _ => SchemaFieldRef::Type(stype.to_token_stream().to_string()),
             },
         });
@@ -347,6 +335,35 @@ fn extract_type_names(sref: &str) -> Vec<String> {
         }
     }
     type_names
+}
+
+fn remove_create_type_path(type_path: &syn::TypePath) -> String {
+    fn simplify_type(ty: &syn::Type) -> String {
+        match ty {
+            syn::Type::Path(type_path) => {
+                let segment = type_path.path.segments.last().unwrap();
+                let mut type_str = segment.ident.to_string();
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    let args_str = args
+                        .args
+                        .iter()
+                        .filter_map(|arg| match arg {
+                            syn::GenericArgument::Type(ty) => Some(simplify_type(ty)),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    type_str.push('<');
+                    type_str.push_str(&args_str);
+                    type_str.push('>');
+                }
+                type_str
+            }
+            _ => ty.to_token_stream().to_string(),
+        }
+    }
+
+    simplify_type(&syn::Type::Path(type_path.clone()))
 }
 
 fn replace_types(sref: &str, defs: &HashMap<String, String>, generics: &[String]) -> String {

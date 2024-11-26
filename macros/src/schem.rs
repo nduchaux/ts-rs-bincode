@@ -113,7 +113,11 @@ impl Schema {
                     SchemaFieldRef::ItemsRefs(format!("{}", t.elem.to_token_stream().to_string()))
                 }
                 Type::Path(t) => {
-                    SchemaFieldRef::Refs(format!("{}", t.path.to_token_stream().to_string()))
+                    if let Some(last_segment) = t.path.segments.last() {
+                        SchemaFieldRef::Refs(last_segment.ident.to_string())
+                    } else {
+                        SchemaFieldRef::Refs("Unknown".to_string())
+                    }
                 }
                 _ => SchemaFieldRef::Type(stype.to_token_stream().to_string()),
             },
@@ -145,7 +149,7 @@ impl Schema {
                     }
                 } else {
                     // Type non primitif et non générique connu, on l'ajoute aux définitions
-                    self.def.insert(type_string.clone(), type_string);
+                    // self.def.insert(type_string.clone(), type_string);
 
                     // Vous pouvez également traiter les sous-types si ce type contient des types internes
                     if let PathArguments::AngleBracketed(args) = &last_segment.arguments {
@@ -154,6 +158,9 @@ impl Schema {
                                 self.process_type(inner_type);
                             }
                         }
+                    } else {
+                        let type_string = last_segment.ident.to_string();
+                        self.def.insert(type_string.clone(), type_string);
                     }
                 }
             }
@@ -177,7 +184,11 @@ impl Schema {
                     SchemaFieldRef::ItemsRefs(format!("{}", t.elem.to_token_stream().to_string()))
                 }
                 Type::Path(t) => {
-                    SchemaFieldRef::Refs(format!("{}", t.path.to_token_stream().to_string()))
+                    if let Some(last_segment) = t.path.segments.last() {
+                        SchemaFieldRef::Refs(last_segment.ident.to_string())
+                    } else {
+                        SchemaFieldRef::Refs("Unknown".to_string())
+                    }
                 }
                 _ => SchemaFieldRef::Type(stype.to_token_stream().to_string()),
             },

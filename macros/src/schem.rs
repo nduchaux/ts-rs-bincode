@@ -159,8 +159,8 @@ impl Schema {
                             }
                         }
                     } else {
-                        let type_string = last_segment.ident.to_string();
-                        self.def.insert(type_string.clone(), type_string);
+                        let _type_string = last_segment.ident.to_string();
+                        self.def.insert(_type_string.clone(), type_string);
                     }
                 }
             }
@@ -264,7 +264,10 @@ impl Schema {
                     for type_name in type_names {
                         if self.def.contains_key(&type_name) && !self.generics.contains(&type_name)
                         {
-                            let def_name = type_name
+                            let def_name = &self
+                                .def
+                                .get(&type_name)
+                                .unwrap()
                                 .replace(|c: char| !c.is_alphanumeric(), "_")
                                 .replace(" ", "")
                                 .replace("__", "_")
@@ -301,7 +304,12 @@ impl Schema {
                     .trim_start_matches('_')
                     // Convert to lowercase
                     .to_uppercase();
-                let def = def.replace("\n", "").replace(" ", "");
+                let def = &self
+                    .def
+                    .get(def)
+                    .unwrap()
+                    .replace("\n", "")
+                    .replace(" ", "");
                 s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
             }
             s.push_str("  },\n");

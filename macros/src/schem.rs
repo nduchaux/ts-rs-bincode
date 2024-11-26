@@ -143,6 +143,7 @@ impl Schema {
                     }
                 } else {
                     // Type non primitif et non générique connu, on l'ajoute aux définitions
+                    self.def.insert(ident.clone(), type_string.clone());
                     self.def.insert(type_string.clone(), type_string.clone());
 
                     // Vous pouvez également traiter les sous-types si ce type contient des types internes
@@ -248,6 +249,26 @@ impl Schema {
                 s.push_str("  \"definitions\": {\n");
                 for field in &variant.fields {
                     let sref = field.sref.to_string();
+                    if self.def.contains_key(&sref) && !self.generics.contains(&sref) {
+                        let def_name = &self
+                            .def
+                            .get(&sref)
+                            .unwrap()
+                            .replace(|c: char| !c.is_alphanumeric(), "_")
+                            .replace(" ", "")
+                            .replace("__", "_")
+                            .replace("__", "_")
+                            .trim_end_matches('_')
+                            .trim_start_matches('_')
+                            .to_uppercase();
+                        let def_key = self
+                            .def
+                            .get(&sref)
+                            .unwrap()
+                            .replace("\n", "")
+                            .replace(" ", "");
+                        s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def_key, def_name));
+                    }
                     let type_names = extract_type_names(&sref);
                     for type_name in type_names {
                         if self.def.contains_key(&type_name) && !self.generics.contains(&type_name)
@@ -263,7 +284,13 @@ impl Schema {
                                 .trim_end_matches('_')
                                 .trim_start_matches('_')
                                 .to_uppercase();
-                            let def_key = type_name.replace("\n", "").replace(" ", "");
+                            // let def_key = type_name.replace("\n", "").replace(" ", "");
+                            let def_key = self
+                                .def
+                                .get(&type_name)
+                                .unwrap()
+                                .replace("\n", "")
+                                .replace(" ", "");
                             s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def_key, def_name));
                         }
                     }
@@ -292,13 +319,17 @@ impl Schema {
                     .trim_start_matches('_')
                     // Convert to lowercase
                     .to_uppercase();
-                let def = &self
-                    .def
-                    .get(def)
-                    .unwrap()
-                    .replace("\n", "")
-                    .replace(" ", "");
-                s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
+                if self.def.contains_key(def) {
+                    let def = &self
+                        .def
+                        .get(def)
+                        .unwrap()
+                        .replace("\n", "")
+                        .replace(" ", "");
+                    s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
+                } else {
+                    panic!("def not found: {} in def: {:?}", def, self.def);
+                }
             }
             s.push_str("  },\n");
         }

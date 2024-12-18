@@ -405,6 +405,14 @@ fn remove_create_type_path(type_path: &syn::TypePath) -> String {
 
 fn replace_types(sref: &str, defs: &HashMap<String, String>, generics: &[String]) -> String {
     let mut result = String::new();
+
+    if sref.is_empty() {
+        return result;
+    }
+    if defs.contains_key(sref) && !generics.contains(&sref.to_string()) {
+        return format!("#/definitions/{}", sref);
+    }
+
     let mut chars = sref.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '<' {

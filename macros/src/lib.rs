@@ -249,14 +249,7 @@ impl DerivedTS {
         let name = format!("{}Schema", name);
         if let Some(schema) = &self.schema {
             // get only values of the map (def)
-            let def_type_list: Vec<String> = schema
-                .def
-                .iter()
-                .map(|(_, v)| {
-                    let v = v.to_string();
-                    v
-                })
-                .collect();
+            let def_type_list: Vec<String> = schema.def.clone().into_iter().collect();
             let schema = schema.to_string();
             // let dependencies = dependencies.used_types();
             // let dependencies = dependencies.used_types().map(|ty| {

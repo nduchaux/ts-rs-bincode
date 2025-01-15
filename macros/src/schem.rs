@@ -47,7 +47,7 @@ pub struct Schema {
     pub fields: Vec<SchemaField>,
     pub variants: Vec<SchemaVariant>,
     // Clean def ==> Full def
-    pub def: HashSet<String>,
+    pub def: HashMap<String, String>,
 }
 
 impl Schema {
@@ -58,7 +58,7 @@ impl Schema {
             stype,
             fields: Vec::new(),
             variants: Vec::new(),
-            def: HashSet::new(),
+            def: HashMap::new(),
         }
     }
 
@@ -163,8 +163,12 @@ impl Schema {
                     // self.def.insert(ident.clone(), type_string.clone());
                     // self.def.insert(type_string.clone(), type_string.clone());
                     // self.def.insert(ident.clone(), type_string.clone());
-                    self.def
-                        .insert(remove_create_type_path(type_path).replace(" ", ""));
+                    self.def.insert(
+                        remove_create_type_path(type_path).replace(" ", ""),
+                        type_path.to_token_stream().to_string().replace(" ", ""),
+                    );
+                    // self.dep
+                    //     .insert(type_path.to_token_stream().to_string().replace(" ", ""));
 
                     // Vous pouvez également traiter les sous-types si ce type contient des types internes
                     if let PathArguments::AngleBracketed(args) = &last_segment.arguments {
@@ -223,7 +227,9 @@ impl Schema {
         if self.stype == SchemaType::Struct {
             for field in &self.fields {
                 let sref = field.sref.to_string();
-                let final_type = replace_types(&sref, &self.def, &self.generics).replace(" ", "");
+                let final_type =
+                    replace_types(&sref, &hashmap_to_hashset(self.def.clone()), &self.generics)
+                        .replace(" ", "");
                 s.push_str(&format!(
                     "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
                     field.name, final_type
@@ -253,7 +259,8 @@ impl Schema {
                     };
                     let sref = field.sref.to_string();
                     let final_type =
-                        replace_types(&sref, &self.def, &self.generics).replace(" ", "");
+                        replace_types(&sref, &hashmap_to_hashset(self.def.clone()), &self.generics)
+                            .replace(" ", "");
                     s.push_str(&format!(
                 "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
                 name,
@@ -270,7 +277,7 @@ impl Schema {
                     let sref = field.sref.to_string();
                     // .replace("<", " < ")
                     // .replace(">", " >");
-                    if self.def.contains(&sref) && !self.generics.contains(&sref) {
+                    if self.def.contains_key(&sref) && !self.generics.contains(&sref) {
                         let def_name = sref
                             .replace(|c: char| !c.is_alphanumeric(), "_")
                             .replace(" ", "")
@@ -286,7 +293,8 @@ impl Schema {
                     } else {
                         let type_names = extract_type_names(&sref);
                         for type_name in type_names {
-                            if self.def.contains(&type_name) && !self.generics.contains(&type_name)
+                            if self.def.contains_key(&type_name)
+                                && !self.generics.contains(&type_name)
                             {
                                 let def_name = type_name
                                     .replace(|c: char| !c.is_alphanumeric(), "_")
@@ -316,7 +324,7 @@ impl Schema {
         // Definitions part
         if self.stype == SchemaType::Struct {
             s.push_str("  \"definitions\": {\n");
-            for def in &self.def {
+            for (def, _) in &self.def {
                 let def = def.replace("\n", "").replace(" ", "");
                 let _def = def
                     // Replace any special characters with an underscore
@@ -330,7 +338,7 @@ impl Schema {
                     .trim_start_matches('_')
                     // Convert to lowercase
                     .to_uppercase();
-                if self.def.contains(&def) {
+                if self.def.contains_key(&def) {
                     let def = def.replace("\n", "").replace(" ", "");
                     // panic!("def: {:?} in def: {:?}", def, self.def);
                     s.push_str(&format!("    \"{}\": &&&{}&&&,\n", def, _def));
@@ -466,6 +474,10 @@ fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>)
         }
     }
     result
+}
+
+fn hashmap_to_hashset(hashmap: HashMap<String, String>) -> HashSet<String> {
+    hashmap.into_iter().map(|(k, _)| k).collect()
 }
 
 // fn get_last_type_from_angle_brackets(type_string: String, generics: Vec<String>) -> String {

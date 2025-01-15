@@ -249,7 +249,7 @@ impl DerivedTS {
         let name = format!("{}Schema", name);
         if let Some(schema) = &self.schema {
             // get only values of the map (def)
-            let def_type_list: Vec<String> = schema.def.clone().into_iter().collect();
+            let def_type_list: HashMap<String, String> = schema.def.clone();
             let schema = schema.to_string();
             // let dependencies = dependencies.used_types();
             // let dependencies = dependencies.used_types().map(|ty| {
@@ -258,28 +258,31 @@ impl DerivedTS {
             //         <#ty as #crate_rename::TS>::schema();
             //     }
             // });
-            let dependencies = def_type_list.into_iter().map(|ty| {
-                // _ty needs to be in lowercase
-                if ty.is_empty() {
-                    panic!("ty is empty")
-                }
-                let __ty: TokenStream = ty.parse().unwrap();
-                let _ty: TokenStream = ty
-                    // Replace any special characters with an underscore
-                    .replace(|c: char| !c.is_alphanumeric(), "_")
-                    // Remove duplicate underscores
-                    .replace("__", "_")
-                    .replace("__", "_")
-                    // Remove trailing underscores
-                    .trim_end_matches('_')
-                    .trim_start_matches('_')
-                    // Convert to lowercase
-                    .to_lowercase()
-                    .parse()
-                    .unwrap();
-                (_ty, __ty)
-            });
-            let def_dependencies = dependencies.clone().map(|(ty, _ty)| {
+            let dependencies = def_type_list
+                .into_iter()
+                .map(|(ty, full_ty)| {
+                    // _ty needs to be in lowercase
+                    if ty.is_empty() {
+                        panic!("ty is empty")
+                    }
+                    let __ty: TokenStream = full_ty.parse().unwrap();
+                    let _ty: TokenStream = ty
+                        // Replace any special characters with an underscore
+                        .replace(|c: char| !c.is_alphanumeric(), "_")
+                        // Remove duplicate underscores
+                        .replace("__", "_")
+                        .replace("__", "_")
+                        // Remove trailing underscores
+                        .trim_end_matches('_')
+                        .trim_start_matches('_')
+                        // Convert to lowercase
+                        .to_lowercase()
+                        .parse()
+                        .unwrap();
+                    (_ty, __ty)
+                })
+                .collect::<Vec<(TokenStream, TokenStream)>>();
+            let def_dependencies = dependencies.clone().into_iter().map(|(ty, _ty)| {
                 if _ty.to_token_stream().to_string() == _o_name {
                     quote! {}
                 } else {
@@ -296,7 +299,7 @@ impl DerivedTS {
                     let #_ty: String = <#ty as #crate_rename::TS>::schema(false);
                 }
             });
-            let repl_dependencies = dependencies.map(|(ty, _ty)| {
+            let repl_dependencies = dependencies.into_iter().map(|(ty, _ty)| {
                 if _ty.to_token_stream().to_string() == _o_name {
                     let fmt_def: String =
                         format!("#/definitions/{}", _ty.to_token_stream().to_string());

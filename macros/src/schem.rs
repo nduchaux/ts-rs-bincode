@@ -164,7 +164,7 @@ impl Schema {
                     // self.def.insert(type_string.clone(), type_string.clone());
                     // self.def.insert(ident.clone(), type_string.clone());
                     self.def
-                        .insert(type_path.to_token_stream().to_string().replace(" ", ""));
+                        .insert(remove_create_type_path(type_path).replace(" ", ""));
 
                     // Vous pouvez également traiter les sous-types si ce type contient des types internes
                     if let PathArguments::AngleBracketed(args) = &last_segment.arguments {

@@ -111,11 +111,11 @@ impl DerivedTS {
             #export
         };
         // write impl to file for debugging
-        // use std::fs::File;
-        // use std::io::Write;
-        // let folder = std::fs::create_dir_all("example/bindings/rs").unwrap();
-        // let mut file = File::create(format!("{}/{}.rs", "example/bindings/rs", rust_ty)).unwrap();
-        // write!(file, "{}", final_q).unwrap();
+        use std::fs::File;
+        use std::io::Write;
+        std::fs::create_dir_all("example/bindings/rs").unwrap();
+        let mut file = File::create(format!("{}/{}.rs", "example/bindings/rs", rust_ty)).unwrap();
+        write!(file, "{}", final_q).unwrap();
         final_q
     }
 

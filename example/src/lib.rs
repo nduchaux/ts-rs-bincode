@@ -8,6 +8,30 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 #[derive(Serialize, TS)]
+#[ts(export)]
+struct ASample<A> {
+    a: A,
+}
+#[derive(Serialize, TS)]
+#[ts(export)]
+struct BSample<B> {
+    b: B,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+enum TaskInput<A, B> {
+    A(ASample<A>),
+    B(BSample<B>),
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+enum ImplTaskInput {
+    TaskInput(TaskInput<Gender, Role>),
+}
+
+#[derive(Serialize, TS)]
 #[ts(rename_all = "lowercase")]
 #[ts(export, export_to = "UserRole.ts")]
 enum Role {
@@ -26,6 +50,37 @@ enum Gender {
     Other,
 }
 
+mod test {
+    use serde::Serialize;
+    use ts_rs::TS;
+
+    #[derive(Serialize, TS)]
+    #[ts(export)]
+    pub struct Point<T>
+    where
+        T: TS,
+    {
+        time: u64,
+        value: T,
+    }
+}
+
+// use test::Point;
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+enum CrateEnumUser {
+    // John(crate::Point<crate::Gender>),
+    Jane { point: test::Point<crate::Gender> },
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+enum EnumUser {
+    // John(Point<Gender>),
+    Jane { point: crate::test::Point<Gender> },
+}
+
 #[derive(Serialize, TS)]
 #[ts(export)]
 struct User {
@@ -35,7 +90,7 @@ struct User {
     role: Role,
     family: Vec<User>,
     #[ts(inline)]
-    gender: Gender,
+    gender: crate::test::Point<Gender>,
     token: Uuid,
     #[ts(type = "string")]
     created_at: NaiveDateTime,
@@ -58,20 +113,10 @@ enum ParametricVehicle<T> {
 }
 
 #[derive(Serialize, TS)]
-#[ts(export)]
-struct Point<T>
-where
-    T: TS,
-{
-    time: u64,
-    value: T,
-}
-
-#[derive(Serialize, TS)]
 #[serde(default)]
 #[ts(export)]
 struct Series {
-    points: Vec<Point<u64>>,
+    points: Vec<crate::test::Point<u64>>,
 }
 
 #[derive(Serialize, TS)]

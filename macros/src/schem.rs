@@ -274,7 +274,7 @@ impl Schema {
                 s.push_str("  \"definitions\": {\n");
                 // panic!("def: {:?}", self.def);
                 for field in &variant.fields {
-                    let sref = field.sref.to_string();
+                    let sref = field.sref.to_string().replace(" ", "");
                     // .replace("<", " < ")
                     // .replace(">", " >");
                     if self.def.contains_key(&sref) && !self.generics.contains(&sref) {
@@ -414,6 +414,7 @@ fn remove_create_type_path(type_path: &syn::TypePath) -> String {
 
 fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>) -> String {
     let mut result = String::new();
+    let sref = sref.replace(" ", "");
 
     if sref.is_empty() {
         return result;

@@ -8,6 +8,30 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 #[derive(Serialize, TS)]
+#[ts(export)]
+struct ASample<A> {
+    a: A,
+}
+#[derive(Serialize, TS)]
+#[ts(export)]
+struct BSample<B> {
+    b: B,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+enum TaskInput<C, D> {
+    A(ASample<C>),
+    B(BSample<D>),
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+enum ImplTaskInput {
+    TaskInput(TaskInput<Gender, Role>),
+}
+
+#[derive(Serialize, TS)]
 #[ts(rename_all = "lowercase")]
 #[ts(export, export_to = "UserRole.ts")]
 enum Role {

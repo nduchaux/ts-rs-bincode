@@ -39,10 +39,28 @@ impl SchemaFieldRef {
     }
 }
 
+/// Schema represents a TypeScript schema for a Rust type.
+/// 
+/// It includes support for generic type parameters, both from the type itself
+/// and from parent schemas. When a schema is created for a type that uses generic
+/// type parameters from a parent schema, the parent generics should be extracted
+/// from the schema string using `parse_parent_generics_from_schema` and added
+/// to the `parent_generics` field using `add_parent_generics`.
+/// 
+/// Example:
+/// ```
+/// // When processing a schema string that might contain parent generics:
+/// let parent_generics = Schema::parse_parent_generics_from_schema(&schema_str);
+/// let mut schema = Schema::new("MyType".to_string(), SchemaType::Struct);
+/// schema.add_parent_generics(&parent_generics);
+/// ```
 #[derive(Debug)]
 pub struct Schema {
     name: String,
+    /// Generic type parameters defined by this type
     pub generics: HashSet<String>,
+    /// Generic type parameters from parent schemas that are used by this type
+    pub parent_generics: HashSet<String>,
     stype: SchemaType,
     pub fields: Vec<SchemaField>,
     pub variants: Vec<SchemaVariant>,
@@ -55,11 +73,45 @@ impl Schema {
         Self {
             name,
             generics: HashSet::new(),
+            parent_generics: HashSet::new(),
             stype,
             fields: Vec::new(),
             variants: Vec::new(),
             def: HashMap::new(),
         }
+    }
+    
+    // Add parent generic type names to this schema
+    pub fn add_parent_generics(&mut self, parent_generics: &[String]) {
+        for generic in parent_generics {
+            self.parent_generics.insert(generic.clone());
+        }
+    }
+    
+    // Parse a schema string to extract parent generic type names
+    pub fn parse_parent_generics_from_schema(schema_str: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        
+        // Look for the parent_generics field in the schema string
+        if let Some(start_idx) = schema_str.find("\"parent_generics\":[") {
+            // Find the start of the array
+            let array_start = start_idx + "\"parent_generics\":[".len();
+            // Find the end of the array
+            if let Some(array_end) = schema_str[array_start..].find(']') {
+                // Extract the array content
+                let array_content = &schema_str[array_start..array_start + array_end];
+                // Split by comma and process each item
+                for item in array_content.split(',') {
+                    // Remove quotes and whitespace
+                    let clean_item = item.trim().trim_matches('"');
+                    if !clean_item.is_empty() {
+                        result.push(clean_item.to_string());
+                    }
+                }
+            }
+        }
+        
+        result
     }
 
     pub fn add_generic(&mut self, ident: Ident) {
@@ -120,8 +172,10 @@ impl Schema {
     fn process_type(&mut self, stype: &Type) {
         let type_string = stype.to_token_stream().to_string();
 
-        // Si le type est un type primitif ou générique, on ne fait rien
-        if is_primitive_type(&type_string) || self.generics.iter().any(|g| g == &type_string) {
+        // Si le type est un type primitif ou générique (local ou parent), on ne fait rien
+        if is_primitive_type(&type_string) || 
+           self.generics.iter().any(|g| g == &type_string) || 
+           self.parent_generics.iter().any(|g| g == &type_string) {
             return;
         }
 
@@ -228,7 +282,7 @@ impl Schema {
             for field in &self.fields {
                 let sref = field.sref.to_string();
                 let final_type =
-                    replace_types(&sref, &hashmap_to_hashset(self.def.clone()), &self.generics)
+                    replace_types(&sref, &hashmap_to_hashset(self.def.clone()), &self.generics, &self.parent_generics)
                         .replace(" ", "");
                 s.push_str(&format!(
                     "    {{\n      \"name\": \"{}\",\n      \"type\": \"{}\"\n    }},\n",
@@ -259,7 +313,7 @@ impl Schema {
                     };
                     let sref = field.sref.to_string();
                     let final_type =
-                        replace_types(&sref, &hashmap_to_hashset(self.def.clone()), &self.generics)
+                        replace_types(&sref, &hashmap_to_hashset(self.def.clone()), &self.generics, &self.parent_generics)
                             .replace(" ", "");
                     s.push_str(&format!(
                 "        {{\n          \"name\": \"{}\",\n          \"type\": \"{}\"\n        }},\n",
@@ -351,9 +405,18 @@ impl Schema {
 
         // Generics part
         s.push_str("  \"generics\": {\n");
+        
+        // Include both local generics and parent generics
+        // First add local generics
         for generic in &self.generics {
             s.push_str(&format!("    \"{}\": &&&&{}&&&&,\n", generic, generic));
         }
+        
+        // Then add parent generics
+        for generic in &self.parent_generics {
+            s.push_str(&format!("    \"{}\": &&&&{}&&&&,\n", generic, generic));
+        }
+        
         s.push_str("  }\n}");
 
         s
@@ -412,22 +475,27 @@ fn remove_create_type_path(type_path: &syn::TypePath) -> String {
     simplify_type(&syn::Type::Path(type_path.clone()))
 }
 
-fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>) -> String {
+fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>, parent_generics: &HashSet<String>) -> String {
     let mut result = String::new();
     let sref = sref.replace(" ", "");
 
     if sref.is_empty() {
         return result;
     }
-    if defs.contains(&sref.to_string()) && !generics.contains(&sref.to_string()) {
+    // Check if the type is in defs and not in either generics or parent_generics
+    if defs.contains(&sref.to_string()) && 
+       !generics.contains(&sref.to_string()) && 
+       !parent_generics.contains(&sref.to_string()) {
         return format!("#/definitions/{}", sref);
     }
 
     if sref.contains("::") {
         // It's probably an associated type, like T::Info
-        // Check if the part before '::' is a known generic parameter
+        // Check if the part before '::' is a known generic parameter (either local or parent)
         let parts: Vec<&str> = sref.split("::").collect();
-        if parts.len() == 2 && generics.contains(&parts[0].to_string()) {
+        if parts.len() == 2 && 
+           (generics.contains(&parts[0].to_string()) || 
+            parent_generics.contains(&parts[0].to_string())) {
             // Treat T::Info as a generic-type-like entity, no definition needed.
             return sref.to_string();
         }
@@ -452,7 +520,7 @@ fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>)
                 }
             }
             // Appel récursif pour les types à l'intérieur des crochets
-            let replaced_inner = replace_types(&inner_type[..inner_type.len() - 1], defs, generics);
+            let replaced_inner = replace_types(&inner_type[..inner_type.len() - 1], defs, generics, parent_generics);
             result.push_str(&replaced_inner);
             result.push('>');
         } else if c.is_alphanumeric() || c == '_' {
@@ -479,6 +547,60 @@ fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>)
 
 fn hashmap_to_hashset(hashmap: HashMap<String, String>) -> HashSet<String> {
     hashmap.into_iter().map(|(k, _)| k).collect()
+}
+
+/// Extracts generic parameters from a type reference string.
+/// 
+/// For example, given "ASample<C>", this function returns ["C"].
+/// For "HashMap<String, D>", it returns ["String", "D"].
+/// 
+/// # Arguments
+/// 
+/// * `type_str` - The type reference string to parse
+/// 
+/// # Returns
+/// 
+/// A vector of strings representing the generic parameters
+pub fn extract_generic_parameters(type_str: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    
+    // Find the opening angle bracket
+    if let Some(start_idx) = type_str.find('<') {
+        // Find the closing angle bracket
+        if let Some(end_idx) = type_str.rfind('>') {
+            // Extract the content between the angle brackets
+            let content = &type_str[start_idx + 1..end_idx];
+            
+            // Handle nested angle brackets
+            let mut bracket_count = 0;
+            let mut current_param = String::new();
+            
+            for c in content.chars() {
+                if c == '<' {
+                    bracket_count += 1;
+                    current_param.push(c);
+                } else if c == '>' {
+                    bracket_count -= 1;
+                    current_param.push(c);
+                } else if c == ',' && bracket_count == 0 {
+                    // End of a parameter
+                    if !current_param.is_empty() {
+                        result.push(current_param.trim().to_string());
+                        current_param = String::new();
+                    }
+                } else {
+                    current_param.push(c);
+                }
+            }
+            
+            // Add the last parameter
+            if !current_param.is_empty() {
+                result.push(current_param.trim().to_string());
+            }
+        }
+    }
+    
+    result
 }
 
 // fn get_last_type_from_angle_brackets(type_string: String, generics: Vec<String>) -> String {

@@ -282,12 +282,72 @@ impl DerivedTS {
                     (_ty, __ty)
                 })
                 .collect::<Vec<(TokenStream, TokenStream)>>();
+            // Collect generic type names to pass to child schemas
+            let generic_names: Vec<String> = _generics.type_params()
+                .map(|ty| ty.ident.to_string())
+                .collect();
+            
             let def_dependencies = dependencies.clone().into_iter().map(|(ty, _ty)| {
                 if _ty.to_token_stream().to_string() == _o_name {
                     quote! {}
                 } else {
+                    // Extract the specific generic parameters used in this child type reference
+                    let type_str = _ty.to_token_stream().to_string();
+                    
+                    // Extract the generic parameters from the type string
+                    let mut child_generic_params = Vec::new();
+                    
+                    // Find the opening angle bracket
+                    if let Some(start_idx) = type_str.find('<') {
+                        // Find the closing angle bracket
+                        if let Some(end_idx) = type_str.rfind('>') {
+                            // Extract the content between the angle brackets
+                            let content = &type_str[start_idx + 1..end_idx];
+                            
+                            // Handle nested angle brackets
+                            let mut bracket_count = 0;
+                            let mut current_param = String::new();
+                            
+                            for c in content.chars() {
+                                if c == '<' {
+                                    bracket_count += 1;
+                                    current_param.push(c);
+                                } else if c == '>' {
+                                    bracket_count -= 1;
+                                    current_param.push(c);
+                                } else if c == ',' && bracket_count == 0 {
+                                    // End of a parameter
+                                    if !current_param.is_empty() {
+                                        child_generic_params.push(current_param.trim().to_string());
+                                        current_param = String::new();
+                                    }
+                                } else {
+                                    current_param.push(c);
+                                }
+                            }
+                            
+                            // Add the last parameter
+                            if !current_param.is_empty() {
+                                child_generic_params.push(current_param.trim().to_string());
+                            }
+                        }
+                    }
+                    
+                    // Filter parent generics to include only those that match the child's generic parameters
+                    let filtered_generics: Vec<String> = generic_names.iter()
+                        .filter(|parent_generic| child_generic_params.contains(parent_generic))
+                        .map(|s| s.to_string())
+                        .collect();
+                    
+                    // Format the filtered generics as a JSON array
+                    let filtered_generics_str = filtered_generics.iter()
+                        .map(|name| format!("\"{}\"", name))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    
+                    // Generate the code to pass only the matching parent generics to the child schema
                     quote! {
-                        let #ty: String = <#_ty as #crate_rename::TS>::schema(false);
+                        let #ty: String = format!("{{\"parent_generics\":[{}],{}", #filtered_generics_str, <#_ty as #crate_rename::TS>::schema(false).trim_start_matches('{'));
                     }
                 }
             });

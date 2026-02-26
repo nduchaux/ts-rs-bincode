@@ -428,6 +428,21 @@ pub trait TS {
     /// This function will not panic if the type has no schema.
     fn schema(export: bool) -> String;
 
+    /// Name of the schema variable exported by this type's file.
+    /// e.g. `"GenderSchema"` for a type named `Gender`.
+    fn schema_var_name() -> String {
+        format!("{}Schema", Self::ident())
+    }
+
+    /// Iterates over all types referenced in this type's schema definitions section.
+    /// This is used to generate schema import statements for types that may not appear
+    /// in the regular TypeScript type dependencies (e.g. inlined types).
+    fn visit_schema_dependencies(_: &mut impl TypeVisitor)
+    where
+        Self: 'static,
+    {
+    }
+
     /// Iterates over all dependency of this type.
     fn visit_dependencies(_: &mut impl TypeVisitor)
     where
@@ -458,6 +473,24 @@ pub trait TS {
         }
         Self::visit_dependencies(&mut Visit(&mut deps));
 
+        deps
+    }
+
+    /// Resolves all schema-specific dependencies (types referenced in schema definitions).
+    fn schema_dependencies() -> Vec<Dependency>
+    where
+        Self: 'static,
+    {
+        let mut deps: Vec<Dependency> = vec![];
+        struct Visit<'a>(&'a mut Vec<Dependency>);
+        impl<'a> TypeVisitor for Visit<'a> {
+            fn visit<T: TS + 'static + ?Sized>(&mut self) {
+                if let Some(dep) = Dependency::from_ty::<T>() {
+                    self.0.push(dep);
+                }
+            }
+        }
+        Self::visit_schema_dependencies(&mut Visit(&mut deps));
         deps
     }
 
@@ -601,6 +634,8 @@ pub struct Dependency {
     /// name, which can be customized with `#[ts(export_to = "..")]`.  
     /// This path does _not_ include a base directory.
     pub output_path: &'static Path,
+    /// Name of the schema variable exported by this type's file, e.g. `"GenderSchema"`.
+    pub schema_var_name: String,
 }
 
 impl Dependency {
@@ -613,6 +648,7 @@ impl Dependency {
             type_id: TypeId::of::<T>(),
             ts_name: T::ident(),
             output_path,
+            schema_var_name: T::schema_var_name(),
         })
     }
 }
@@ -1158,5 +1194,9 @@ impl TS for Dummy {
 
     fn schema(_: bool) -> String {
         return "{}".to_owned();
+    }
+
+    fn schema_var_name() -> String {
+        "{}".to_owned()
     }
 }

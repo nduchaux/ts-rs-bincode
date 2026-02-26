@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 use path::diff_paths;
 pub(crate) use recursive_export::export_all_into;
 
-use crate::TS;
+use crate::{Dependency, TS};
 
 mod error;
 mod path;
@@ -308,14 +308,37 @@ fn generate_imports<T: TS + ?Sized + 'static>(
         .map(|x| out_dir.as_ref().join(x))
         .map_err(ExportError::CannotBeExported)?;
 
+    // Collect type dependencies (for `import type { X }`)
     let deps = T::dependencies();
-    let deduplicated_deps = deps
+    let deduplicated_deps: BTreeMap<&str, &Dependency> = deps
         .iter()
         .filter(|dep| dep.type_id != TypeId::of::<T>())
-        .map(|dep| (&dep.ts_name, dep))
-        .collect::<BTreeMap<_, _>>();
+        .map(|dep| (dep.ts_name.as_str(), dep))
+        .collect();
 
-    for (_, dep) in deduplicated_deps {
+    // Collect schema dependencies (for `import { XSchema }`) — may include
+    // types not present in the regular TS type deps (e.g. #[ts(inline)] types)
+    let schema_deps = T::schema_dependencies();
+    let deduplicated_schema_deps: BTreeMap<&str, &Dependency> = schema_deps
+        .iter()
+        .filter(|dep| dep.type_id != TypeId::of::<T>())
+        .map(|dep| (dep.ts_name.as_str(), dep))
+        .collect();
+
+    // Merged sorted set of all dependency names
+    let all_names: BTreeSet<&str> = deduplicated_deps
+        .keys()
+        .chain(deduplicated_schema_deps.keys())
+        .copied()
+        .collect();
+
+    for name in all_names {
+        // Prefer schema_dep for path info (they overlap most of the time)
+        let dep = deduplicated_schema_deps
+            .get(name)
+            .or_else(|| deduplicated_deps.get(name))
+            .unwrap();
+
         let dep_path = out_dir.as_ref().join(dep.output_path);
         let rel_path = import_path(&path, &dep_path)?;
 
@@ -331,11 +354,20 @@ fn generate_imports<T: TS + ?Sized + 'static>(
             continue;
         }
 
-        writeln!(
-            out,
-            r#"import type {{ {} }} from "{}";"#,
-            &dep.ts_name, rel_path
-        )?;
+        if deduplicated_deps.contains_key(name) {
+            writeln!(
+                out,
+                r#"import type {{ {} }} from "{}";"#,
+                name, rel_path
+            )?;
+        }
+        if deduplicated_schema_deps.contains_key(name) {
+            writeln!(
+                out,
+                r#"import {{ {} }} from "{}";"#,
+                dep.schema_var_name, rel_path
+            )?;
+        }
     }
     writeln!(out)?;
     Ok(())

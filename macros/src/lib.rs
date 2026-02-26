@@ -83,6 +83,7 @@ impl DerivedTS {
         let dependencies = &self.dependencies;
         let generics_fn = self.generate_generics_fn(&generics);
         let schem = self.generate_schem_fn(&rust_ty, &generics, &self.dependencies);
+        let schema_deps_fn = self.generate_schema_deps_fn(&rust_ty, &generics);
 
         let final_q = quote! {
             #impl_start {
@@ -97,6 +98,7 @@ impl DerivedTS {
                 #decl
                 #inline
                 #schem
+                #schema_deps_fn
                 #generics_fn
                 #output_path_fn
 
@@ -226,17 +228,49 @@ impl DerivedTS {
         }
     }
 
-    // export const UserSchema = {
-    //     "type": "struct",
-    //     "properties": {
-    //         "user_id": { "type": "i32" },
-    //         "first_name": { "type": "string" },
-    //         "last_name": { "type": "string" },
-    //         "role": { "$ref": "#/definitions/Role" },
-    //         "family": { "type": "array", "items": { "$ref": "#/definitions/User" }
-    //         },
-    //     },
-    // };
+    /// Generates `visit_schema_dependencies` which visits all types referenced in the
+    /// schema `definitions` section. This covers types that might be #[ts(inline)] and
+    /// therefore absent from the regular `visit_dependencies`.
+    fn generate_schema_deps_fn(&self, _rust_ty: &Ident, _generics: &Generics) -> TokenStream {
+        let crate_rename = &self.crate_rename;
+        let _o_name = self.ts_name.clone();
+
+        let Some(schema) = &self.schema else {
+            return quote! {};
+        };
+
+        // Collect all unique types from schema.def, excluding self-references
+        // For generic instantiations like Point<Gender>, we visit the base type
+        // (Point) via the full type, and also each concrete generic arg (Gender).
+        let visits: Vec<TokenStream> = schema.def.iter().filter_map(|(_, full_ty)| {
+            let full_ty_clean = full_ty.replace(" ", "");
+            if full_ty_clean == _o_name {
+                return None; // skip self-reference
+            }
+            let ty: TokenStream = match full_ty.parse() {
+                Ok(t) => t,
+                Err(_) => return None,
+            };
+            // Visit the type itself (handles both simple and generic instantiations)
+            Some(quote! {
+                v.visit::<#ty>();
+            })
+        }).collect();
+
+        if visits.is_empty() {
+            return quote! {};
+        }
+
+        quote! {
+            fn visit_schema_dependencies(v: &mut impl #crate_rename::TypeVisitor)
+            where
+                Self: 'static,
+            {
+                #(#visits)*
+            }
+        }
+    }
+
     fn generate_schem_fn(
         &self,
         _rust_ty: &Ident,
@@ -251,118 +285,243 @@ impl DerivedTS {
             // get only values of the map (def)
             let def_type_list: HashMap<String, String> = schema.def.clone();
             let schema = schema.to_string();
-            // let dependencies = dependencies.used_types();
-            // let dependencies = dependencies.used_types().map(|ty| {
-            //     quote! {
-            //         v.visit::<#ty>();
-            //         <#ty as #crate_rename::TS>::schema();
-            //     }
-            // });
             let dependencies = def_type_list
                 .into_iter()
                 .map(|(ty, full_ty)| {
-                    // _ty needs to be in lowercase
                     if ty.is_empty() {
                         panic!("ty is empty")
                     }
                     let __ty: TokenStream = full_ty.parse().unwrap();
                     let _ty: TokenStream = ty
-                        // Replace any special characters with an underscore
                         .replace(|c: char| !c.is_alphanumeric(), "_")
-                        // Remove duplicate underscores
                         .replace("__", "_")
                         .replace("__", "_")
-                        // Remove trailing underscores
                         .trim_end_matches('_')
                         .trim_start_matches('_')
-                        // Convert to lowercase
                         .to_lowercase()
                         .parse()
                         .unwrap();
                     (_ty, __ty)
                 })
                 .collect::<Vec<(TokenStream, TokenStream)>>();
-            // Collect generic type names to pass to child schemas
-            let generic_names: Vec<String> = _generics.type_params()
-                .map(|ty| ty.ident.to_string())
-                .collect();
-            
+
+            // Build the schema variable reference for each child dependency.
+            // For simple non-generic types: "RoleSchema"
+            // For generic instantiations like Point<Gender>:
+            //   "{ ...PointSchema, \"generics\": { \"T\": GenderSchema } }"
             let def_dependencies = dependencies.clone().into_iter().map(|(ty, _ty)| {
-                if _ty.to_token_stream().to_string() == _o_name {
+                if _ty.to_token_stream().to_string().replace(" ", "") == _o_name {
+                    // Self-reference: emit empty string placeholder (handled in repl)
                     quote! {}
                 } else {
-                    // Extract the specific generic parameters used in this child type reference
-                    let type_str = _ty.to_token_stream().to_string();
-                    
-                    // Extract the generic parameters from the type string
-                    let mut child_generic_params = Vec::new();
-                    
-                    // Find the opening angle bracket
-                    if let Some(start_idx) = type_str.find('<') {
-                        // Find the closing angle bracket
-                        if let Some(end_idx) = type_str.rfind('>') {
-                            // Extract the content between the angle brackets
-                            let content = &type_str[start_idx + 1..end_idx];
-                            
-                            // Handle nested angle brackets
-                            let mut bracket_count = 0;
-                            let mut current_param = String::new();
-                            
-                            for c in content.chars() {
-                                if c == '<' {
-                                    bracket_count += 1;
-                                    current_param.push(c);
-                                } else if c == '>' {
-                                    bracket_count -= 1;
-                                    current_param.push(c);
-                                } else if c == ',' && bracket_count == 0 {
-                                    // End of a parameter
-                                    if !current_param.is_empty() {
-                                        child_generic_params.push(current_param.trim().to_string());
-                                        current_param = String::new();
+                    let type_str = _ty.to_token_stream().to_string().replace(" ", "");
+
+                    // Extract generic arguments from the type string e.g. "Point<Gender>" -> ["Gender"]
+                    let child_generic_params: Vec<String> = {
+                        let mut params = Vec::new();
+                        if let Some(start_idx) = type_str.find('<') {
+                            if let Some(end_idx) = type_str.rfind('>') {
+                                let content = &type_str[start_idx + 1..end_idx];
+                                let mut bracket_count = 0;
+                                let mut current_param = String::new();
+                                for c in content.chars() {
+                                    if c == '<' {
+                                        bracket_count += 1;
+                                        current_param.push(c);
+                                    } else if c == '>' {
+                                        bracket_count -= 1;
+                                        current_param.push(c);
+                                    } else if c == ',' && bracket_count == 0 {
+                                        if !current_param.is_empty() {
+                                            params.push(current_param.trim().to_string());
+                                            current_param = String::new();
+                                        }
+                                    } else {
+                                        current_param.push(c);
                                     }
-                                } else {
-                                    current_param.push(c);
+                                }
+                                if !current_param.is_empty() {
+                                    params.push(current_param.trim().to_string());
                                 }
                             }
-                            
-                            // Add the last parameter
-                            if !current_param.is_empty() {
-                                child_generic_params.push(current_param.trim().to_string());
-                            }
                         }
-                    }
-                    
-                    // Filter parent generics to include only those that match the child's generic parameters
-                    let filtered_generics: Vec<String> = generic_names.iter()
-                        .filter(|parent_generic| child_generic_params.contains(parent_generic))
-                        .map(|s| s.to_string())
-                        .collect();
-                    
-                    // Format the filtered generics as a JSON array
-                    let filtered_generics_str = filtered_generics.iter()
-                        .map(|name| format!("\"{}\"", name))
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    
-                    // Generate the code to pass only the matching parent generics to the child schema
-                    quote! {
-                        let #ty: String = format!("{{\"parent_generics\":[{}],{}", #filtered_generics_str, <#_ty as #crate_rename::TS>::schema(false).trim_start_matches('{'));
+                        params
+                    };
+
+                    if child_generic_params.is_empty() {
+                        // Simple type: use schema_var_name() for exportable types (custom structs/enums),
+                        // and schema(false) for primitives (no output file).
+                        quote! {
+                            let #ty: String = if <#_ty as #crate_rename::TS>::output_path().is_some() {
+                                <#_ty as #crate_rename::TS>::schema_var_name()
+                            } else {
+                                <#_ty as #crate_rename::TS>::schema(false)
+                            };
+                        }
+                    } else {
+                        // Generic instantiation: build spread expression with overridden generics.
+                        // We need the generic param *names* of the base type (e.g. "T" for Point<T>).
+                        // At macro time we can't easily get them, but at runtime we can use a helper.
+                        // Instead, we emit code that at runtime:
+                        //   1. Gets the base type schema var name (e.g. "PointSchema")
+                        //   2. Gets each concrete type's schema var name (e.g. "GenderSchema")
+                        //   3. Combines them into a spread expression.
+                        //
+                        // We use a Vec of (param_index, concrete_schema_var) pairs and the base
+                        // type's generic names via schema output (we can parse them at runtime from
+                        // the base schema). Instead, we use a simpler approach: output a JavaScript
+                        // spread with the generics as an indexed array that the runtime maps to names.
+                        //
+                        // Simplest approach: emit the concrete schema var names as an ordered list
+                        // and generate a JS spread that overrides "generics" at runtime using the
+                        // base type's schema to get param names.
+
+                        // Parse the base type (without generics) to get schema var name
+                        // We need to construct the base type token stream without generics.
+                        // Use _ty to get ident() at runtime.
+                        let concrete_schema_vars: Vec<TokenStream> = child_generic_params.iter().map(|param| {
+                            // param is a type name like "Gender", "u64", etc.
+                            // Use schema_var_name() for exportable types (custom structs/enums),
+                            // and schema(false) for primitive types (no output file).
+                            let param_ty: TokenStream = param.parse().unwrap();
+                            quote! {
+                                if <#param_ty as #crate_rename::TS>::output_path().is_some() {
+                                    <#param_ty as #crate_rename::TS>::schema_var_name()
+                                } else {
+                                    <#param_ty as #crate_rename::TS>::schema(false)
+                                }
+                            }
+                        }).collect();
+
+                        // Get generic param *names* from the base schema at runtime.
+                        // The base schema's "generics" section has the param names as keys.
+                        // We need to call the base type (without generic args) schema.
+                        // At macro time we have `_ty` = `Point<Gender>`. We need just `Point`.
+                        // We use <#_ty as TS>::schema_var_name() which gives "PointSchema" (base ident),
+                        // then read the base schema to get generic param names.
+                        //
+                        // Actually: let's emit a helper that builds the spread at runtime.
+                        // The base type's schema is called with no generics (dummy), but we can
+                        // use the generic names directly since we know them from the macro context.
+                        //
+                        // The generic param names of #_ty (e.g. Point<T>) are the type param names
+                        // of the base Rust type. We get them at runtime by parsing the base schema's
+                        // "generics" object keys.
+
+                        quote! {
+                            let #ty: String = {
+                                // Get the base schema variable name (e.g. "PointSchema")
+                                let base_schema_var = <#_ty as #crate_rename::TS>::schema_var_name();
+                                // Get the base (non-instantiated) schema string to extract generic param names
+                                // We call schema(false) on the concrete instantiation... but we need the
+                                // param names from the generic base. Use ident() to get the base name.
+                                // For now, emit a spread that carries schema_var_name for each concrete type.
+                                let concrete_vars: Vec<String> = vec![
+                                    #(#concrete_schema_vars),*
+                                ];
+                                // Build: { ...PointSchema, "generics": { "T": GenderSchema, ... } }
+                                // But we need the generic param names. Get them by parsing the
+                                // generic base schema. We use a helper: schema_generic_param_names.
+                                let base_schema_str = {
+                                    // Call schema(false) with dummy generics to get the base schema structure
+                                    // This is available as the non-instantiated type's schema
+                                    <#_ty as #crate_rename::TS>::schema(false)
+                                };
+                                // Extract the generic parameter names from the base schema's top-level
+                                // "generics" section (use rfind to skip nested "generics" in definitions).
+                                let param_names = {
+                                    let mut names = Vec::new();
+                                    if let Some(gen_start) = base_schema_str.rfind("\"generics\"") {
+                                        if let Some(brace_start) = base_schema_str[gen_start..].find('{') {
+                                            let after_brace = &base_schema_str[gen_start + brace_start + 1..];
+                                            // Count nested braces to find the closing } of the generics object
+                                            let mut depth = 1usize;
+                                            let mut brace_end = 0usize;
+                                            for (i, ch) in after_brace.char_indices() {
+                                                match ch {
+                                                    '{' => depth += 1,
+                                                    '}' => {
+                                                        depth -= 1;
+                                                        if depth == 0 {
+                                                            brace_end = i;
+                                                            break;
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            let gen_content = &after_brace[..brace_end];
+                                            // Extract keys: split by comma at depth 0
+                                            let mut entry_depth = 0usize;
+                                            let mut entry = String::new();
+                                            for ch in gen_content.chars() {
+                                                match ch {
+                                                    '{' => { entry_depth += 1; entry.push(ch); }
+                                                    '}' => { entry_depth -= 1; entry.push(ch); }
+                                                    ',' if entry_depth == 0 => {
+                                                        let e = entry.trim().to_string();
+                                                        if !e.is_empty() {
+                                                            if let Some(ks) = e.find('"') {
+                                                                let after_k = &e[ks + 1..];
+                                                                if let Some(ke) = after_k.find('"') {
+                                                                    let key = &after_k[..ke];
+                                                                    if !key.is_empty() {
+                                                                        names.push(key.to_string());
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        entry = String::new();
+                                                    }
+                                                    _ => { entry.push(ch); }
+                                                }
+                                            }
+                                            // Handle last entry (no trailing comma)
+                                            let e = entry.trim().to_string();
+                                            if !e.is_empty() {
+                                                if let Some(ks) = e.find('"') {
+                                                    let after_k = &e[ks + 1..];
+                                                    if let Some(ke) = after_k.find('"') {
+                                                        let key = &after_k[..ke];
+                                                        if !key.is_empty() {
+                                                            names.push(key.to_string());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    names
+                                };
+                                // Build the generics override object
+                                let generics_obj = param_names.iter()
+                                    .zip(concrete_vars.iter())
+                                    .map(|(name, var)| format!("\"{}\": {}", name, var))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                format!("{{ ...{}, \"generics\": {{ {} }} }}", base_schema_var, generics_obj)
+                            };
+                        }
                     }
                 }
             });
+
             let def_generics = _generics.type_params().map(|ty| {
                 let _ty = ty.ident.to_string();
                 let _ty = _ty.to_lowercase();
                 let _ty: TokenStream = _ty.parse().unwrap();
                 quote! {
-                    let #_ty: String = <#ty as #crate_rename::TS>::schema(false);
+                    let #_ty: String = if <#ty as #crate_rename::TS>::output_path().is_some() {
+                        <#ty as #crate_rename::TS>::schema_var_name()
+                    } else {
+                        <#ty as #crate_rename::TS>::schema(false)
+                    };
                 }
             });
             let repl_dependencies = dependencies.into_iter().map(|(ty, _ty)| {
-                if _ty.to_token_stream().to_string() == _o_name {
+                if _ty.to_token_stream().to_string().replace(" ", "") == _o_name {
                     let fmt_def: String =
-                        format!("#/definitions/{}", _ty.to_token_stream().to_string());
+                        format!("#/definitions/{}", _ty.to_token_stream().to_string().replace(" ", ""));
                     let fmt: String =
                         format!("&&&{}&&&", ty.to_token_stream().to_string().to_uppercase());
                     quote! {

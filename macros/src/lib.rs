@@ -379,16 +379,27 @@ impl DerivedTS {
                         // Parse the base type (without generics) to get schema var name
                         // We need to construct the base type token stream without generics.
                         // Use _ty to get ident() at runtime.
+                        // Collect the parent's generic param names (uppercase) for compile-time detection
+                        let parent_generic_names: Vec<String> = _generics.type_params()
+                            .map(|tp| tp.ident.to_string())
+                            .collect();
+
                         let concrete_schema_vars: Vec<TokenStream> = child_generic_params.iter().map(|param| {
-                            // param is a type name like "Gender", "u64", etc.
-                            // Use schema_var_name() for exportable types (custom structs/enums),
-                            // and schema(false) for primitive types (no output file).
-                            let param_ty: TokenStream = param.parse().unwrap();
-                            quote! {
-                                if <#param_ty as #crate_rename::TS>::output_path().is_some() {
-                                    <#param_ty as #crate_rename::TS>::schema_var_name()
-                                } else {
-                                    <#param_ty as #crate_rename::TS>::schema(false)
+                            if parent_generic_names.iter().any(|g| g == param) {
+                                // Parent generic: emit the parent generic name as a quoted JS string.
+                                // specializeSchema() will resolve "C" → GenderSchema via typeParams lookup.
+                                // e.g. param="C" → the JS string literal "\"C\""
+                                let quoted = format!("\"{}\"", param);
+                                quote! { #quoted.to_owned() }
+                            } else {
+                                // Concrete type: use schema_var_name() for exportable, schema(false) for primitives
+                                let param_ty: TokenStream = param.parse().unwrap();
+                                quote! {
+                                    if <#param_ty as #crate_rename::TS>::output_path().is_some() {
+                                        <#param_ty as #crate_rename::TS>::schema_var_name()
+                                    } else {
+                                        <#param_ty as #crate_rename::TS>::schema(false)
+                                    }
                                 }
                             }
                         }).collect();
@@ -547,8 +558,8 @@ impl DerivedTS {
             });
             return quote! {
                 fn schema(export: bool) -> String {
-                    #(#def_dependencies)*
                     #(#def_generics)*
+                    #(#def_dependencies)*
                     let mut schem = "".to_string();
                     if (export) {
                         schem = format!("const {} = {}", #name, #schema);

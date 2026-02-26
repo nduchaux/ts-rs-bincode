@@ -57,10 +57,10 @@ impl SchemaFieldRef {
 #[derive(Debug)]
 pub struct Schema {
     name: String,
-    /// Generic type parameters defined by this type
-    pub generics: HashSet<String>,
+    /// Generic type parameters defined by this type (in declaration order)
+    pub generics: Vec<String>,
     /// Generic type parameters from parent schemas that are used by this type
-    pub parent_generics: HashSet<String>,
+    pub parent_generics: Vec<String>,
     stype: SchemaType,
     pub fields: Vec<SchemaField>,
     pub variants: Vec<SchemaVariant>,
@@ -72,8 +72,8 @@ impl Schema {
     pub fn new(name: String, stype: SchemaType) -> Self {
         Self {
             name,
-            generics: HashSet::new(),
-            parent_generics: HashSet::new(),
+            generics: Vec::new(),
+            parent_generics: Vec::new(),
             stype,
             fields: Vec::new(),
             variants: Vec::new(),
@@ -84,7 +84,9 @@ impl Schema {
     // Add parent generic type names to this schema
     pub fn add_parent_generics(&mut self, parent_generics: &[String]) {
         for generic in parent_generics {
-            self.parent_generics.insert(generic.clone());
+            if !self.parent_generics.contains(generic) {
+                self.parent_generics.push(generic.clone());
+            }
         }
     }
     
@@ -115,7 +117,10 @@ impl Schema {
     }
 
     pub fn add_generic(&mut self, ident: Ident) {
-        self.generics.insert(ident.to_string());
+        let s = ident.to_string();
+        if !self.generics.contains(&s) {
+            self.generics.push(s);
+        }
     }
 
     pub fn add_variant(
@@ -475,7 +480,7 @@ fn remove_create_type_path(type_path: &syn::TypePath) -> String {
     simplify_type(&syn::Type::Path(type_path.clone()))
 }
 
-fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>, parent_generics: &HashSet<String>) -> String {
+fn replace_types(sref: &str, defs: &HashSet<String>, generics: &[String], parent_generics: &[String]) -> String {
     let mut result = String::new();
     let sref = sref.replace(" ", "");
 
@@ -490,13 +495,10 @@ fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>,
     }
 
     if sref.contains("::") {
-        // It's probably an associated type, like T::Info
-        // Check if the part before '::' is a known generic parameter (either local or parent)
         let parts: Vec<&str> = sref.split("::").collect();
         if parts.len() == 2 && 
            (generics.contains(&parts[0].to_string()) || 
             parent_generics.contains(&parts[0].to_string())) {
-            // Treat T::Info as a generic-type-like entity, no definition needed.
             return sref.to_string();
         }
     }
@@ -519,7 +521,6 @@ fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>,
                     }
                 }
             }
-            // Appel récursif pour les types à l'intérieur des crochets
             let replaced_inner = replace_types(&inner_type[..inner_type.len() - 1], defs, generics, parent_generics);
             result.push_str(&replaced_inner);
             result.push('>');
@@ -532,7 +533,6 @@ fn replace_types(sref: &str, defs: &HashSet<String>, generics: &HashSet<String>,
                     break;
                 }
             }
-            // panic!("type_name: {:?} in defs: {:?}", type_name, defs);
             if defs.contains(&type_name) && !generics.contains(&type_name) {
                 result.push_str(&format!("#/definitions/{}", type_name));
             } else {
